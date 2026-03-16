@@ -240,6 +240,21 @@ Add the following — replacing `<username>` with your username on Windows, or u
 
 > If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it.
 
+**Alternatively**, if you prefer to skip the manual clone and point directly to the hosted Git URL:
+```json
+{
+  "extraKnownMarketplaces": {
+    "prevoir": {
+      "source": {
+        "source": "github",
+        "repo": "dodogeny/prevoir-skill-internal-dev"
+      }
+    }
+  }
+}
+```
+> Note: With this option you must also run `claude plugin marketplace update prevoir` before installing, to fetch the marketplace content from GitHub.
+
 ### 3. Install the plugin
 
 ```bash
