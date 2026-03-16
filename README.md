@@ -203,19 +203,13 @@ Add the following to `~/.claude/settings.json`:
 
 > If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it.
 
-### 2. Fetch the marketplace
-
-```bash
-claude plugin marketplace update prevoir
-```
-
-### 3. Install the plugin
+### 2. Install the plugin
 
 ```bash
 claude plugin install prevoir@prevoir
 ```
 
-### 4. Verify
+### 3. Verify
 
 ```bash
 claude plugin list
