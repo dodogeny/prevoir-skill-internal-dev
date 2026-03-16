@@ -184,7 +184,20 @@ pip3 install markdown2 weasyprint
 
 ## Installation
 
-### 1. Register the marketplace
+### 1. Clone the marketplace repository
+
+**macOS / Linux:**
+```bash
+git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git \
+  ~/.claude/plugins/marketplaces/prevoir
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git "$env:USERPROFILE\.claude\plugins\marketplaces\prevoir"
+```
+
+### 2. Register the marketplace
 
 Locate your Claude Code `settings.json` file:
 
@@ -193,36 +206,47 @@ Locate your Claude Code `settings.json` file:
 | macOS / Linux | `~/.claude/settings.json` |
 | Windows | `C:\Users\<username>\.claude\settings.json` |
 
-**Windows:** If the `.claude` folder or `settings.json` does not exist, create them via PowerShell:
-```powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude"
-notepad "$env:USERPROFILE\.claude\settings.json"
-```
+> If the file does not exist, create it.
 
-Add the following to the file:
+Add the following — replacing `<username>` with your username on Windows, or using the `~/.claude/...` path on macOS/Linux:
 
+**macOS / Linux:**
 ```json
 {
   "extraKnownMarketplaces": {
     "prevoir": {
       "source": {
-        "source": "github",
-        "repo": "dodogeny/prevoir-skill-internal-dev"
+        "source": "directory",
+        "path": "/Users/<username>/.claude/plugins/marketplaces/prevoir"
       }
     }
   }
 }
 ```
 
-> If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it. If `settings.json` does not exist, create it with the content above.
+**Windows:**
+```json
+{
+  "extraKnownMarketplaces": {
+    "prevoir": {
+      "source": {
+        "source": "directory",
+        "path": "C:\\Users\\<username>\\.claude\\plugins\\marketplaces\\prevoir"
+      }
+    }
+  }
+}
+```
 
-### 2. Install the plugin
+> If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it.
+
+### 3. Install the plugin
 
 ```bash
 claude plugin install prevoir@prevoir
 ```
 
-### 3. Verify
+### 4. Verify
 
 ```bash
 claude plugin list
