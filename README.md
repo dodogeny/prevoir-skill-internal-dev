@@ -184,14 +184,7 @@ pip3 install markdown2 weasyprint
 
 ## Installation
 
-### 1. Clone this repository
-
-```bash
-git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git \
-  ~/.claude/plugins/marketplaces/prevoir
-```
-
-### 2. Register the marketplace
+### 1. Register the marketplace
 
 Add the following to `~/.claude/settings.json`:
 
@@ -200,22 +193,20 @@ Add the following to `~/.claude/settings.json`:
   "extraKnownMarketplaces": {
     "prevoir": {
       "source": {
-        "source": "directory",
-        "path": "/Users/<your-username>/.claude/plugins/marketplaces/prevoir"
+        "source": "github",
+        "repo": "dodogeny/prevoir-skill-internal-dev"
       }
     }
   }
 }
 ```
 
-> Replace `<your-username>` with your macOS username.
+> If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it.
 
-Alternatively, if the repo is hosted on a Git server, use:
-```json
-"source": {
-  "source": "url",
-  "url": "https://github.com/dodogeny/prevoir-skill-internal-dev.git"
-}
+### 2. Fetch the marketplace
+
+```bash
+claude plugin marketplace update prevoir
 ```
 
 ### 3. Install the plugin
