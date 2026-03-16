@@ -23,7 +23,7 @@ Use `REPO_DIR` wherever the repository path is referenced throughout this skill.
 Invoke when the developer provides:
 - A Jira ticket URL: `https://prevoirsolutions.atlassian.net/browse/IV-XXXX`
 - A Jira ticket key: `IV-XXXX`
-- A phrase like `/prevoir:dev IV-3672` or "start dev on IV-3672" or "pick up IV-3672"
+- A phrase like `/prevoir:dev IV-3672` or `/dev IV-3672` or "start dev on IV-3672" or "pick up IV-3672"
 
 Do NOT invoke for general code questions, PR reviews, or questions unrelated to starting work on a Jira ticket.
 

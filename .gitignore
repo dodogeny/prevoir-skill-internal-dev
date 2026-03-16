@@ -5,6 +5,13 @@
 *.ipr
 out/
 
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+*.launch
+
 # macOS
 .DS_Store
 .AppleDouble

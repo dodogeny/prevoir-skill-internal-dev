@@ -279,6 +279,9 @@ Invoke the skill from any Claude Code session using any of these forms:
 /prevoir:dev IV-3672
 ```
 ```
+/dev IV-3672
+```
+```
 start dev on IV-3672
 ```
 ```
@@ -287,6 +290,8 @@ pick up IV-3672
 ```
 https://prevoirsolutions.atlassian.net/browse/IV-3672
 ```
+
+> `/dev` is the shorthand — it uses just the skill name. `/prevoir:dev` is the fully qualified form that includes the plugin namespace. Both work; use the fully qualified form if another installed plugin also has a skill named `dev`.
 
 Claude will immediately begin executing all 9 steps in order, presenting output for each step as it completes.
 
@@ -399,6 +404,67 @@ The skill is purpose-built for the V1 codebase:
 - **Tech stack:** Java, GWT, Oracle + PostgreSQL, Maven
 - **Main branch:** `development`
 - **Branch convention:** `Feature/IV-XXXX_Title_In_Title_Case`
+
+---
+
+## Contributing
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git
+```
+
+### 2. Open in your IDE
+
+**IntelliJ IDEA:**
+- File → Open → select the cloned folder
+- IntelliJ will detect it as a project automatically
+
+**Eclipse:**
+- File → Open Projects from File System → select the cloned folder
+- Eclipse project files (`.project`, `.classpath`, `.settings/`) are gitignored and will be generated locally
+
+### 3. Make your changes
+
+All skill logic lives in a single file:
+
+```
+plugin/skills/dev/SKILL.md
+```
+
+Edit this file to modify the workflow steps, prompts, or project context.
+
+### 4. Bump the version
+
+When making a change, increment the version number in **all three** of the following files:
+
+| File | Field |
+|------|-------|
+| `plugin/.claude-plugin/plugin.json` | `"version"` |
+| `plugin/package.json` | `"version"` |
+| `.claude-plugin/marketplace.json` | `"version"` inside the `plugins` array |
+
+Follow [semantic versioning](https://semver.org): `MAJOR.MINOR.PATCH`
+- **PATCH** (e.g. `1.0.1`) — bug fix or wording tweak
+- **MINOR** (e.g. `1.1.0`) — new step or significant behaviour change
+- **MAJOR** (e.g. `2.0.0`) — breaking restructure
+
+### 5. Commit and push
+
+```bash
+git add .
+git commit -m "vX.Y.Z — short description of change"
+git push origin main
+```
+
+### 6. Team members update
+
+After pushing, notify the team to run:
+
+```bash
+claude plugin update prevoir@prevoir
+```
 
 ---
 
