@@ -309,11 +309,25 @@ The entire skill logic lives in `plugin/skills/dev/SKILL.md`. It is a markdown f
 
 ## Updating the Skill
 
-Edit `plugin/skills/dev/SKILL.md`, commit, and push. Team members update with:
+### For maintainers
+
+Edit `plugin/skills/dev/SKILL.md`, commit, and push to GitHub.
+
+### For team members
+
+To pull the latest version of the skill:
 
 ```bash
 claude plugin update prevoir@prevoir
 ```
+
+Verify the update was applied:
+
+```bash
+claude plugin list
+```
+
+The version number next to `prevoir@prevoir` should reflect the latest release.
 
 ---
 
