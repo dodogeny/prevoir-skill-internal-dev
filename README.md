@@ -191,7 +191,13 @@ Locate your Claude Code `settings.json` file:
 | OS | Path |
 |----|------|
 | macOS / Linux | `~/.claude/settings.json` |
-| Windows | `C:\Users\<username>\AppData\Roaming\Claude\settings.json` |
+| Windows | `C:\Users\<username>\.claude\settings.json` |
+
+**Windows:** If the `.claude` folder or `settings.json` does not exist, create them via PowerShell:
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude"
+notepad "$env:USERPROFILE\.claude\settings.json"
+```
 
 Add the following to the file:
 
