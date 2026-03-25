@@ -27,3 +27,7 @@ npm-debug.log*
 Thumbs.db
 *.tmp
 *.log
+
+# Polling script — credentials and runtime files (never commit these)
+scripts/.jira-credentials
+scripts/.jira-seen-tickets

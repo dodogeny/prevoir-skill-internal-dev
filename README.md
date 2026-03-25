@@ -783,17 +783,26 @@ If you want the script to re-analyse tickets it has already processed, clear the
 ```
 .
 ├── .claude-plugin/
-│   └── marketplace.json        # Claude Code marketplace descriptor
+│   └── marketplace.json              # Claude Code marketplace descriptor
 ├── plugin/
 │   ├── .claude-plugin/
-│   │   └── plugin.json         # Plugin metadata (name, version, author)
-│   ├── package.json            # Node package metadata
+│   │   └── plugin.json               # Plugin metadata (name, version, author)
+│   ├── package.json                  # Node package metadata
 │   └── skills/
 │       └── dev/
-│           └── SKILL.md        # The skill definition — all 11 steps
+│           └── SKILL.md              # The skill definition — all 11 steps
+├── scripts/
+│   ├── poll-jira.sh                  # Jira polling script (macOS / Linux / Windows WSL)
+│   ├── com.prevoir.poll-jira.plist   # macOS launchd schedule template
+│   └── .jira-credentials.example    # Credentials template (safe to commit — dummy values)
 ├── .gitignore
 └── README.md
 ```
+
+> **Not in the repo (gitignored):**
+> - `scripts/.jira-credentials` — your real API token; created locally from `.jira-credentials.example`
+> - `scripts/.jira-seen-tickets` — runtime cache of processed ticket keys
+> - `scripts/poll-jira.log` / `poll-jira-error.log` — runtime logs
 
 The entire skill logic lives in `plugin/skills/dev/SKILL.md`. It is a markdown file that Claude Code loads as a prompt extension when the skill is invoked. No compiled code, no runtime dependencies beyond what Claude Code provides.
 
