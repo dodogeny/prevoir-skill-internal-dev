@@ -512,6 +512,42 @@ claude plugin list
 
 You should see `prevoir@prevoir` listed as installed.
 
+### 5. Upgrading
+
+How you upgrade depends on which registration method you used in Step 2.
+
+#### If you registered with a local path (manual clone)
+
+Pull the latest changes into your cloned directory, then update the plugin:
+
+**macOS / Linux:**
+```bash
+git -C ~/.claude/plugins/marketplaces/prevoir pull
+claude plugin update prevoir@prevoir
+```
+
+**Windows (PowerShell):**
+```powershell
+git -C "$env:USERPROFILE\.claude\plugins\marketplaces\prevoir" pull
+claude plugin update prevoir@prevoir
+```
+
+#### If you registered with the hosted Git URL
+
+Claude Code manages the fetch from GitHub. Just run:
+
+```bash
+claude plugin update prevoir@prevoir
+```
+
+#### Verify the upgrade
+
+```bash
+claude plugin list
+```
+
+The version number next to `prevoir@prevoir` should reflect the latest release.
+
 ---
 
 ## Usage
