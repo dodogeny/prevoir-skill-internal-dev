@@ -116,13 +116,14 @@ Claude compiles a developer-ready summary covering:
 
 ---
 
-### Step 9 — Session Stats
+### Step 9 — Change Summary
 
-Prints a single line with elapsed time, estimated token usage, and estimated cost at Claude Sonnet 4.6 pricing:
+Claude compiles a developer-ready summary covering:
 
-```
-IV-3672 | ~14m elapsed | ~5,100 in / ~2,040 out tokens | est. cost $0.0462 (Sonnet 4.6)
-```
+- **Files touched** — table of every file modified, created, or deleted with a one-line description
+- **What changed and why** — one paragraph per file explaining the change and the reasoning
+- **Suggested commit message** — ready-to-paste, following the project convention: `IV-XXXX_Title_VERSION`
+- **PR description template** — a fully populated pull request body including Jira link, branch, risk level, what changed, how to test, retest areas, and DB migration flag — ready to paste directly into GitHub/Bitbucket
 
 ---
 
@@ -401,6 +402,83 @@ IV-3672 | ~14m elapsed | ~5,100 in / ~2,040 out tokens | est. cost $0.0462 (Sonn
 
 ---
 
+## Automated Polling (Headless Mode)
+
+In addition to manual invocation, the skill supports a fully automated mode that polls Jira on a schedule and triggers analysis without any developer interaction.
+
+### How it works
+
+A shell script (`poll-jira.sh`) runs daily at 10:00 AM via macOS `launchd`. It:
+
+1. Queries Jira for tickets assigned to you with status **Parked** or **Blocked**
+2. Compares against a local seen-tickets cache — skips anything already processed
+3. For each new ticket, runs the skill with `AUTO_MODE=true` (analysis-only mode — see below)
+4. Sends a macOS notification when analysis is complete
+5. Logs all activity to `poll-jira.log`
+
+### Headless / analysis-only mode
+
+When `AUTO_MODE=true` is set, all interactive confirmation gates are bypassed and the skill runs end-to-end without pausing:
+
+| Gate | Normal behaviour | Headless default |
+|------|-----------------|-----------------|
+| Step 1 — MCP failure | Stop and wait for developer | Exit immediately with `HEADLESS_ERROR: {reason}` |
+| Step 4 — Base branch unconfirmed | Ask developer which branch | Default to `development`; note the fallback |
+| Step 4 — Branch creation | Run `git checkout -b …` | **Skipped** — reports the branch name only; no git commands run |
+| Step 5 — Low file-map confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — manual review required` |
+| Step 6 — Low replication confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — assumptions noted` |
+| Step 7 — Apply fix prompt | Ask yes / no / partial | **Defaults to no** — proposes the fix only; no files are edited |
+
+The full 11-step analysis still runs and the PDF report is saved to disk. The developer reviews the PDF and applies the fix manually.
+
+### Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `poll-jira.sh` | `~/Documents/Prevoir/Scripts/` | Main polling script |
+| `.jira-credentials` | `~/Documents/Prevoir/Scripts/` | API credentials (chmod 600 — owner only) |
+| `.jira-seen-tickets` | `~/Documents/Prevoir/Scripts/` | Cache of already-processed ticket keys |
+| `poll-jira.log` | `~/Documents/Prevoir/Scripts/` | Full run log with timestamps |
+| `com.prevoir.poll-jira.plist` | `~/Library/LaunchAgents/` | macOS launchd schedule definition |
+
+### One-time setup
+
+The scripts are already installed and the launchd job is registered. No further setup is required.
+
+To verify the job is loaded:
+
+```bash
+launchctl list | grep com.prevoir.poll-jira
+```
+
+### Running manually
+
+To trigger a poll immediately without waiting for the scheduled time:
+
+```bash
+bash ~/Documents/Prevoir/Scripts/poll-jira.sh
+```
+
+### Managing the schedule
+
+```bash
+# Disable (stop the daily schedule)
+launchctl unload ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+
+# Re-enable
+launchctl load ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+```
+
+### Resetting the seen-tickets cache
+
+If you want the script to re-analyse tickets it has already processed, clear the cache:
+
+```bash
+> ~/Documents/Prevoir/Scripts/.jira-seen-tickets
+```
+
+---
+
 ## Repository Structure
 
 ```
@@ -547,6 +625,19 @@ claude plugin update prevoir@prevoir
 ---
 
 ## Changelog
+
+### v1.1.1
+
+| # | Area | Change |
+|---|------|--------|
+| 1 | Skill — Headless Mode | Added `AUTO_MODE=true` support — all interactive gates bypass with safe defaults; branch creation and file edits are skipped; full analysis and PDF report still run |
+| 2 | Automation — `poll-jira.sh` | New polling script — queries Jira daily for Parked/Blocked tickets assigned to the current user and triggers headless analysis for each new ticket found |
+| 3 | Automation — `com.prevoir.poll-jira.plist` | macOS launchd job — fires `poll-jira.sh` at 10:00 AM daily; logs stdout and stderr separately |
+| 4 | Automation — `.jira-credentials` | Credentials file (chmod 600) — keeps API token out of the script body |
+| 5 | README — Fix | Removed duplicate Step 9/Step 10 headings in the What It Does section |
+| 6 | README — Automated Polling section | New section documenting headless mode, the polling script, file locations, setup, and cache management |
+
+---
 
 ### v1.1.0
 

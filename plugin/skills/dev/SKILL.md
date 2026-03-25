@@ -18,6 +18,23 @@ REPO_DIR = $HOME/git/insight
 
 Use `REPO_DIR` wherever the repository path is referenced throughout this skill.
 
+## Headless Mode
+
+If the environment variable `AUTO_MODE=true` is set, the skill runs in **analysis-only mode** with no interactive prompts and no side effects:
+
+| Gate | Interactive behaviour | Headless default |
+|------|-----------------------|-----------------|
+| Step 1 — MCP failure | Stop and wait for developer | Print `HEADLESS_ERROR: {reason}` and exit immediately |
+| Step 4a — Base branch unconfirmed | Ask developer which branch to use | Default to `development`; note the fallback in output |
+| Step 4c — Branch creation | Run `git checkout -b …` | **Skip** — report the branch name that would be created, run no git commands |
+| Step 5 — Low file-map confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — manual review required` |
+| Step 6e — Low replication confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — assumptions noted` |
+| Step 7c — Apply fix prompt | Ask yes / no / partial | **Default to no** — propose the fix only; do not call Edit or modify any files |
+
+In headless mode, Steps 1–9 still run and produce full output. Steps 10 and 11 (session stats + PDF report) run as normal so the PDF is saved to disk.
+
+---
+
 ## When to Use This Skill
 
 Invoke when the developer provides:
