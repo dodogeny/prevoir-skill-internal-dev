@@ -29,11 +29,11 @@ If the environment variable `AUTO_MODE=true` is set, the skill runs in **analysi
 | Step 4c — Branch creation | Run `git checkout -b …` | **Skip** — report the branch name that would be created, run no git commands |
 | Step 5 — Low file-map confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — manual review required` |
 | Step 6e — Low replication confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — assumptions noted` |
-| Step 7b — Morgan briefing | Morgan opens session and briefs team | Morgan briefing runs as normal; no developer input required |
-| Step 7d — Mid-point check-in | Engineers report progress to Morgan | All three engineers submit status; Morgan responds automatically |
-| Step 7f — Morgan cross-examination | Morgan poses questions; engineers respond | Questions and responses generated automatically; no developer input required |
-| Step 7g — Team debate | Open floor for one challenge round | Debate runs automatically; if no challenges, state "No challenges" and proceed |
-| Step 7h — Morgan verdict | Morgan scores and declares adopted root cause | Verdict runs automatically; proceed with highest-scoring hypothesis |
+| Step 7b — Morgan briefing *(Bug only)* | Morgan opens session and briefs team | Morgan briefing runs as normal; no developer input required |
+| Step 7d — Mid-point check-in *(Bug only)* | Engineers and Riley report progress to Morgan | All four submit status; Morgan responds automatically |
+| Step 7f — Riley's questions + Morgan cross-examination *(Bug only)* | Riley poses open question; Morgan cross-examines | All questions and responses generated automatically; no developer input required |
+| Step 7g — Team debate *(Bug only)* | Open floor for one challenge round | Debate runs automatically; if no challenges, state "No challenges" and proceed |
+| Step 7h — Morgan verdict *(Bug only)* | Morgan scores and declares adopted root cause | Verdict runs automatically; proceed with highest-scoring hypothesis |
 | Step 8c — Morgan fix review | Morgan vets the proposed fix | Review runs automatically; if REWORK REQUIRED, revise once and re-run; if still failing, proceed with `⚠️ UNRESOLVED — developer review required` |
 | Step 8d — Apply fix prompt | Ask yes / no / partial | **Default to no** — propose the fix only; do not call Edit or modify any files |
 
@@ -379,24 +379,16 @@ If the fix touches **multiple layers**, list each service that needs restarting 
 
 ---
 
-### Step 7 — Root Cause Analysis (Engineering Panel)
+### Step 7 — Root Cause Analysis
 
-A four-person senior engineering team convenes to investigate the issue. **Morgan** (Lead Developer) chairs the session, sets the schedule, and has final authority over the adopted root cause. The three senior engineers investigate independently under a time constraint and compete for the best analysis. After submission, Morgan facilitates a debate round, weighs in with their own assessment, and gives a binding verdict. The team then converges on a single root cause — together.
+This step has two paths. **Choose the correct path based on the Decision Tree result in 7a:**
+
+| Ticket type | Path |
+|-------------|------|
+| **BUG** (Data / UI / Async / Regression) | Engineering Panel → 7b through 7i |
+| **ENHANCEMENT** (feature that never existed) | Direct Analysis → Step 7-ENH, then skip to Step 8 |
 
 Do not guess — verify every claim by reading code at the specific location. The Grep-First rule applies throughout this step.
-
----
-
-**The team:**
-
-| Role | Name | Background | Mandate |
-|------|------|-----------|---------|
-| **Lead Developer** | **Morgan** | 20 yrs Java, ex-systems architect, deep GWT/Spring/Oracle | Chairs the session. Sets schedule. Reviews all hypotheses. Debates. Gives final verdict. Approves the Root Cause Statement. |
-| Senior Engineer 1 | Alex | 12 yrs Java/GWT | Code archaeology & regression forensics |
-| Senior Engineer 2 | Sam | 10 yrs full-stack Java, Spring, GWT RPC | Runtime data flow & logic tracing |
-| Senior Engineer 3 | Jordan | 15 yrs Java, systems architect background | Defensive patterns & structural anti-patterns |
-
-Engineers are competing for the **Best Analysis** distinction. Morgan is not competing — Morgan arbitrates. Morgan's verdict is binding and may endorse, refine, or override any engineer's hypothesis.
 
 ---
 
@@ -435,6 +427,71 @@ Issue reported
 
 State: `Decision tree path: {BUG → DATA ISSUE → Missing null check}` (or whichever branch matched).
 
+**→ If ENHANCEMENT: proceed to Step 7-ENH below and skip the Engineering Panel entirely.**
+**→ If BUG: proceed to 7b (Engineering Panel).**
+
+---
+
+#### Step 7-ENH — Enhancement Direct Analysis *(Enhancement tickets only — skip for bugs)*
+
+Read the files identified in Step 5 and produce a direct analysis. No panel. No debate.
+
+**7-ENH-a. What needs to be added**
+- Explain what the feature is and why it currently does not exist
+- State clearly: *"The system currently lacks X. We need to add Y at Z."*
+- Reference specific file paths and line numbers where the addition will land
+
+**7-ENH-b. Insertion point analysis**
+- Identify every file, method, and layer that must be touched
+- For each insertion point, state:
+  - What already exists there and why it is the correct anchor
+  - What new code goes in (field, method, config item, UI hook — be specific)
+- Run the class hierarchy check (same as Step 5 mandatory check): confirm new fields or methods belong in the abstract base, not the concrete subclass, where applicable
+
+**7-ENH-c. Git history check**
+- Run `git log --oneline --all -- {primary_file}` for each affected file
+- Confirm: no partial implementation of this feature already exists in any branch
+- If a partial exists: note it explicitly and build on it rather than duplicating
+
+**7-ENH-d. Enhancement Statement**
+
+Produce the following block — this replaces the Root Cause Statement for Step 8:
+
+```
+ENHANCEMENT STATEMENT
+────────────────────────────────────────────────────────────────────
+What is missing : [one sentence — what the system cannot currently do]
+Insertion points: [file:line for each touch point]
+Approach        : [one paragraph — the design decision, e.g. new field
+                  in AbstractJsonListener wired through getConfig() in
+                  the concrete class; new UI config item; new DB column]
+Class hierarchy : [N/A / Confirmed concrete class is correct /
+                   Moved to {AbstractBase} — {N} sibling classes benefit]
+Partial exists  : [No — confirmed by git log / Yes — {branch:file:line}]
+Confidence      : High / Medium / Low
+────────────────────────────────────────────────────────────────────
+```
+
+If confidence is **Low** (insertion points unclear after reading the code), stop and ask the developer for clarification before proceeding to Step 8.
+
+**→ After completing Step 7-ENH, skip to Step 8 directly.**
+
+---
+
+#### Engineering Panel *(Bug tickets only — 7b through 7i)*
+
+**The team:**
+
+| Role | Name | Background | Mandate |
+|------|------|-----------|---------|
+| **Lead Developer** | **Morgan** | 20 yrs Java, ex-systems architect, deep GWT/Spring/Oracle | Chairs the session. Sets schedule. Reviews all hypotheses. Debates. Gives final verdict. Approves the Root Cause Statement. |
+| Senior Engineer 1 | Alex | 12 yrs Java/GWT | Code archaeology & regression forensics |
+| Senior Engineer 2 | Sam | 10 yrs full-stack Java, Spring, GWT RPC | Runtime data flow & logic tracing |
+| Senior Engineer 3 | Jordan | 15 yrs Java, systems architect background | Defensive patterns & structural anti-patterns |
+| **Senior Lead Tester** | **Riley** | 18 yrs QA & test architecture, Java enterprise, GWT, regression suites | Assesses testability and impact of each hypothesis. Questions engineer findings. Flags regression risk and edge cases. Riley's concerns are factored into Morgan's verdict and Fix Review. |
+
+Engineers (Alex, Sam, Jordan) are competing for the **Best Analysis** distinction. Morgan is not competing — Morgan arbitrates. Morgan's verdict is binding and may endorse, refine, or override any engineer's hypothesis. Riley is not competing — Riley challenges and assesses from a testing perspective.
+
 ---
 
 #### 7b. Morgan Opens — Lead Briefing (1-minute block)
@@ -453,28 +510,38 @@ Morgan reads the ticket summary, the file map from Step 5, the replication guide
 │   Sam   → Trace from {entry_point} down. Find the divergence.   │
 │   Jordan → Run your pattern checklist. Decision tree says        │
 │            {classification}, so lead with patterns {X, Y, Z}.   │
+│   Riley → Map the test surface. Identify affected user flows,    │
+│            edge cases the engineers may miss, and flag any        │
+│            testability concern with the suspected fix direction.  │
 │                                                                  │
 │ Schedule:                                                        │
-│   T+2 min : Mid-point check-in (all three report progress)      │
-│   T+4 min : Final hypotheses due                                 │
+│   T+2 min : Mid-point check-in (all four report progress)       │
+│   T+4 min : Final hypotheses + Riley's assessment due            │
+│   T+5 min : Riley's questions + Morgan's cross-examination       │
 │   T+6 min : Debate round + my verdict                           │
 │                                                                  │
 │ Rules: Evidence only. File:line or commit references required.   │
-│ I'll challenge any claim that isn't backed by code.              │
+│ Riley — your concerns carry weight. Flag anything that would     │
+│ make this fix untestable or hide a regression.                   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-#### 7c. Parallel Investigation — Engineers Investigate (4-minute block)
+#### 7c. Parallel Investigation — Engineers and Tester Investigate (4-minute block)
 
-Each engineer has a **4-minute investigation window**, capped at **8 targeted grep/read operations** before committing to a hypothesis. The budget enforces focus: senior engineers reach defensible conclusions quickly, not exhaustively.
+Each engineer has a **4-minute investigation window**, capped at **8 targeted grep/read operations** before committing to a hypothesis. Riley runs a parallel impact assessment capped at **6 operations**. The budget enforces focus: reach defensible conclusions quickly, not exhaustively.
 
 **Budget rules (apply to Alex, Sam, and Jordan):**
 - **High-confidence evidence found in ≤ 4 ops?** Stop immediately and go to mid-point check-in. Do not over-investigate.
 - **No clear hypothesis after 8 ops?** Commit to the best available hypothesis, rate it Medium or Low confidence, and state explicitly what additional information would confirm it.
 - Every claim must be backed by a specific `file:line` or commit reference. Unsupported assertions will be challenged by Morgan.
 - Present findings as if briefing a tech lead: precise, brief, right.
+
+**Budget rules (Riley):**
+- 6 operations maximum — Riley is mapping impact, not tracing code.
+- Operations count reads of the ticket description, Step 2/5/6 outputs, and any targeted grep/file reads.
+- Riley does not need to find the root cause — Riley needs to answer: *"If the fix goes where the engineers think, what breaks, what is untestable, and what are the edge cases?"*
 
 ---
 
@@ -546,6 +613,21 @@ Priority order by classification: UI issues → {1, 2, 3, 4}; Data issues → {1
 
 ---
 
+**Riley — Testing Impact & Regression Assessment**
+*"A fix that can't be verified is a fix that can't be trusted."*
+
+Operations (in priority order — stop when impact picture is clear):
+1. Re-read the ticket's expected behaviour and acceptance criteria (Step 2 problem statement)
+2. Review the Step 6 replication guide — assess completeness; identify gaps (missing preconditions, untested data states, concurrent-user scenarios)
+3. From the Step 5 file map, identify every user-facing flow that passes through the affected files — not just the primary path
+4. For each affected flow: what does a tester do to confirm it works after the fix? Is the fix observable from the UI/API, or does it require DB-level verification?
+5. Enumerate edge cases the engineer hypotheses have not addressed: null/empty inputs, DB dialect differences, multi-client data isolation, state at session boundaries
+6. Assess the regression surface: list existing behaviours that the proposed fix direction could silently break — focus on shared utilities, common service methods, and anything called by more than one screen
+
+Riley does **not** assert a root cause. Riley asserts impact, risk, and testability.
+
+---
+
 #### 7d. Mid-Point Check-In — T+2 minutes
 
 Each engineer submits a brief progress report to Morgan after approximately 4 operations used. Morgan acknowledges, redirects if needed, or issues a targeted follow-up question.
@@ -567,16 +649,26 @@ Jordan (ops used: N/8):
            confirmed at CaseManager.java:2272" or "No clear pattern
            yet — continuing through lower-priority checks"]
 
+Riley (ops used: N/6):
+  Status: [e.g. "Three affected flows identified — the fix direction
+           Sam is heading towards would be testable from the UI.
+           Flagging one edge case: the cancel path is not covered
+           by the replication guide." or "Impact surface is wider
+           than expected — two other screens call the same service
+           method. Flagging regression risk."]
+
 ─── Morgan's Response ─────────────────────────────────────────────
 
-[Morgan reads the three statuses and responds with one of:]
+[Morgan reads all four statuses and responds with one of:]
 
   ✓ On track — continue as assigned.
 
   ↻ Redirect: [e.g. "Alex, the commit you're looking at is from
     a different branch — check the merge commit instead." or
     "Sam, skip the DAO layer for now — the UI handler is more
-    likely; go back and read resolveCase() directly."]
+    likely; go back and read resolveCase() directly." or
+    "Riley, the cancel path concern is valid — make sure you
+    have a test scenario for it in your assessment."]
 
   ⚡ Early call: [e.g. "Jordan, if you've confirmed that pattern
     at line 2272 with code evidence, stop — that's enough. Write
@@ -586,9 +678,9 @@ Jordan (ops used: N/8):
 
 ---
 
-#### 7e. Hypothesis Submission — T+4 minutes
+#### 7e. Hypothesis Submission + Testing Assessment — T+4 minutes
 
-All three engineers submit their final hypotheses. Each hypothesis must fit the template exactly — no unsupported claims.
+All three engineers submit their final hypotheses. Riley submits a Testing Impact Assessment simultaneously. Each entry must fit the template exactly — no unsupported claims.
 
 ```
 ┌─ Alex — History & Regression Hypothesis ───────────────────────┐
@@ -620,19 +712,54 @@ All three engineers submit their final hypotheses. Each hypothesis must fit the 
 │ Ops used     : [N / 8]                                           │
 │ Unknowns     : [what pattern analysis alone cannot confirm]      │
 └───────────────────────────────────────────────────────────────────┘
+
+┌─ Riley — Testing Impact Assessment ────────────────────────────┐
+│ Hypothesis risk  : [which engineer's fix direction, if adopted,  │
+│                    poses the highest regression risk — and why]  │
+│ Affected flows   : [user flows / screens that must be smoke-     │
+│                    tested after any fix in this area; at least   │
+│                    the primary path + one adjacent flow]         │
+│ Edge cases       : [boundary conditions, null/empty inputs,      │
+│                    multi-client data isolation, session boundary  │
+│                    states, or concurrent-user scenarios the       │
+│                    engineer hypotheses have not addressed]        │
+│ Testability      : [can the fix be verified from the UI/API, or  │
+│                    does it require DB-level / log confirmation?  │
+│                    Flag if the fix direction is not observable]   │
+│ Regression risk  : High / Medium / Low                           │
+│ Open question    : [one targeted question Riley directs at a      │
+│                    specific engineer or Morgan — must be answered │
+│                    before a fix is approved]                      │
+│ Ops used         : [N / 6]                                        │
+└────────────────────────────────────────────────────────────────────┘
 ```
+
+Riley's assessment is **not scored** — it is advisory. However, any **High regression risk** or unanswered **Open question** must be explicitly addressed by Morgan in the verdict (7h) and Fix Review (8c).
 
 ---
 
-#### 7f. Morgan's Review & Cross-Examination — T+5 minutes
+#### 7f. Riley's Questions + Morgan's Cross-Examination — T+5 minutes
 
-Morgan reads all three hypotheses carefully, then poses **1–2 targeted probing questions** to specific engineers to stress-test their reasoning. Engineers respond in one paragraph — direct, evidence-backed.
+Riley poses the **Open question** from the Testing Impact Assessment directly to the named engineer or Morgan. Then Morgan reads all hypotheses and the testing assessment, and poses **1–2 targeted probing questions** to stress-test reasoning. Engineers respond in one paragraph — direct, evidence-backed.
 
 ```
+─── Riley's Question ──────────────────────────────────────────────
+
+Riley → {Engineer name or Morgan}:
+  "[The Open question from Riley's assessment — e.g. 'Sam, your
+   fix touches resolveCase() which is also called from the Alert
+   Central panel. Have you confirmed that path is not affected?'
+   or 'Jordan, you flagged Boolean Flag Not Reset — does the flag
+   have the same reset gap on the cancel path, or only on error?']"
+
+{Engineer} responds:
+  [Direct answer — one paragraph, backed by file:line evidence
+   or explicit acknowledgement if the concern stands unresolved]
+
 ─── Morgan's Questions ────────────────────────────────────────────
 
 [Morgan selects the most important uncertainties across the three
-hypotheses and asks them directly. Examples:]
+hypotheses and Riley's assessment, then asks them directly. Examples:]
 
   → To Alex: "You say commit abc1234 is responsible. What was the
     stated reason for that change? Was it deliberate removal or
@@ -662,16 +789,23 @@ Morgan uses up to **4 additional targeted reads** (beyond the engineers' budgets
 
 #### 7g. Team Debate — One Round
 
-Morgan opens the floor for one round of cross-challenge. Any engineer may challenge one other engineer's hypothesis with specific counter-evidence. The challenged engineer responds once. Morgan moderates.
+Morgan opens the floor for one round of cross-challenge. Any engineer **or Riley** may mount one challenge. Engineers challenge on code grounds; Riley challenges on impact or testability grounds. The challenged party responds once. Morgan moderates.
 
 ```
 ─── Debate Round ──────────────────────────────────────────────────
 
 [Each challenge must cite specific evidence. Format:]
 
-  {Engineer A} challenges {Engineer B}:
+  {Engineer A or Riley} challenges {Engineer B}:
   "Your hypothesis says X, but I found Y at {file:line} which
   contradicts that because Z. My reading suggests [alternative]."
+
+  — or, from Riley —
+
+  "Your fix direction touches {file/method} which is also called
+  from {other screen/flow}. I flagged this in my assessment.
+  Without a guard at {location}, this fix will silently break
+  {behaviour} for {scenario}. Have you accounted for that?"
 
   {Engineer B} responds:
   "That's a fair point. [Agree / Disagree because {evidence}].
@@ -684,7 +818,7 @@ Morgan opens the floor for one round of cross-challenge. Any engineer may challe
 ────────────────────────────────────────────────────────────────────
 ```
 
-If no engineer mounts a challenge, state: "No challenges — all engineers accept each other's findings."
+If no one mounts a challenge, state: "No challenges — team and tester accept each other's findings."
 
 ---
 
@@ -704,16 +838,24 @@ Morgan weighs all evidence — original hypotheses, responses to questions, and 
 | Found efficiently (≤ 5 ops used) | +1 |
 | Survived cross-examination without needing revision | +2 |
 | Debate challenge successfully deflected with evidence | +1 |
+| Fix direction is testable and Riley raised no High regression risk against it | +1 |
 
-Maximum score: 14 pts. Morgan applies the rubric, declares the highest scorer the winner, and then issues a personal assessment.
+Maximum score: 15 pts. Morgan applies the rubric, declares the highest scorer the winner, then issues a personal assessment — which **must** include a response to Riley's assessment.
 
 ```
 ─── Morgan's Verdict ──────────────────────────────────────────────
 
 Scores:
-  Alex   : {N} / 14 pts — [one-line assessment]
-  Sam    : {N} / 14 pts — [one-line assessment]
-  Jordan : {N} / 14 pts — [one-line assessment]
+  Alex   : {N} / 15 pts — [one-line assessment]
+  Sam    : {N} / 15 pts — [one-line assessment]
+  Jordan : {N} / 15 pts — [one-line assessment]
+
+Tester's view:
+  [Morgan addresses Riley's assessment — one to two sentences.
+   Must state whether the adopted root cause and fix direction
+   address Riley's regression risk and open question. If a High
+   severity concern from Riley is unresolved, Morgan must state
+   whether it is accepted risk or a blocker for the fix.]
 
 My assessment:
   [Morgan weighs in personally — 2–4 sentences. Morgan may:
@@ -741,9 +883,11 @@ Adopted root cause: [the hypothesis Morgan endorses, possibly
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║  🏆  BEST ANALYSIS: {Engineer Name}        Score: {N} / 14 pts  ║
+║  🏆  BEST ANALYSIS: {Engineer Name}        Score: {N} / 15 pts  ║
 ║  Reason: {One sentence — why this analysis was superior}         ║
 ║  Morgan: "{One sentence endorsement or refinement note}"         ║
+║  Riley:  "{One sentence — tester concern status: resolved /      ║
+║            accepted risk / flagged for fix review}"              ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
@@ -764,6 +908,10 @@ Fix dir.  : [One sentence on the correct fix — detail in Step 8]
 Confidence: High / Medium / Low
 Team note : [Optional — one sentence capturing any nuance raised in
              the debate that the fix author must not overlook]
+Tester note: [Riley's key concern or confirmation — e.g. "Regression
+              risk on Alert Central resolve path — must be smoke-tested
+              after fix applied" or "Fix is UI-observable; no DB
+              verification required" — omit if no concern outstanding]
 ────────────────────────────────────────────────────────────────────
 ```
 
@@ -773,14 +921,16 @@ If overall confidence is **Low** after Morgan's verdict (no clear root cause eve
 
 ### Step 8 — Propose the Fix
 
-Using the Root Cause Statement from Step 7 (authored by the winning engineer, approved by Morgan) as the mandatory anchor, read the identified files and produce the fix. Every proposed change must directly address the mechanism identified in Step 7i.
+Use the analysis from Step 7 as the mandatory anchor:
+- **Bug tickets** — anchor to the Root Cause Statement from Step 7i (authored by the winning engineer, approved by Morgan). Every proposed change must directly address the mechanism stated there.
+- **Enhancement tickets** — anchor to the Enhancement Statement from Step 7-ENH-d. Every proposed change must directly implement an insertion point listed there.
 
 #### 8a. Proposed Solution
-- Open by quoting the Root Cause Statement (file:line and mechanism) — do not paraphrase it
+- Open by quoting the analysis anchor — the Root Cause Statement (bug tickets) or Enhancement Statement (enhancement tickets) — verbatim; do not paraphrase
 - Describe the approach in plain language before showing any code
 - Show **only the code that needs to change** (diff-style or clear before/after blocks)
-- Annotate each change with: *"This addresses the [mechanism] identified by [author] in Step 7"*
-- If the Step 7 Team Note flagged a nuance, confirm it is handled by the proposed fix
+- Annotate each change with: *"This addresses the [mechanism / insertion point] identified in Step 7"*
+- If the Step 7 Team Note (bug) or Step 7-ENH confidence note (enhancement) flagged a nuance, confirm it is handled by the proposed fix
 
 #### 8b. Alternative Approaches Considered
 
@@ -802,6 +952,7 @@ Before applying anything, Morgan vetted the proposed fix against the adopted roo
 4. **Team note honoured** — if a nuance was flagged in Step 7i, is it handled?
 5. **DB safety** — if a schema change is included, is it safe on both Oracle and PostgreSQL?
 6. **Abstract class ownership** — if the fix adds new fields, getters/setters, or utility methods to a concrete class: confirm whether the abstract base class is the correct owner. Run `grep "extends {AbstractBase}" --include="*.java"` to find all subclasses. If the abstract base already owns similar state for sibling classes, move the new infrastructure there. Only `getConfig()` config item registrations and `setAttribute()` switch cases are concrete-class concerns — everything else belongs in the abstract base when a suitable one exists.
+7. **Tester concerns addressed** — review Riley's Testing Impact Assessment (Step 7e) and Tester note (Step 7i). For each High or Medium concern Riley raised: confirm the proposed fix addresses it, or explicitly state it is accepted risk and why. If Riley's open question was not answered during cross-examination, answer it now before approving.
 
 ```
 ─── Morgan's Fix Review ───────────────────────────────────────────
@@ -818,6 +969,11 @@ Abstract class ownership : [N/A — no new fields or methods added /
                             Confirmed — concrete class is correct owner /
                             Moved to {AbstractBase} — {N} sibling subclasses
                             benefit; config wiring stays in concrete class]
+Tester concerns          : [N/A — no High or Medium concerns raised /
+                            Resolved — {Riley's concern} is addressed by
+                            {specific change in the fix} /
+                            Accepted risk — {Riley's concern} is not
+                            addressed; accepted because {reason}]
 
 Morgan's verdict:
   ✅ APPROVED — fix is correct, surgical, and safe to apply.
@@ -1061,50 +1217,318 @@ mkdir -p "$REPORT_DIR"
 
 #### 12b. Generate Markdown Source
 
-Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md` containing the full analysis from all steps:
+Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate every section below verbatim from the output already produced in each step — do not summarise or abbreviate. Every table, code block, hypothesis box, statement block, and verdict produced earlier must appear in full. Use the placeholders as structural guides; replace each with the actual content from that step.
 
-```
+````
 # {TICKET_KEY} — {Ticket Summary}
 
-**Date:** {today's date}
-**Branch:** {feature branch name}
-**Analyst:** Claude (Prevoir Dev Skill v1.2.0)
+| Field | Value |
+|-------|-------|
+| Date | {today's date} |
+| Analyst | Claude (Prevoir Dev Skill v1.2.0) |
+| Ticket type | {Bug / Story / Enhancement} |
+| Priority | {priority} |
+| Status | {status} |
+| Branch | {feature branch name} |
+| Base branch | {base branch} |
 
 ---
 
 ## Step 1 — Jira Ticket
-{content}
+
+| Field | Value |
+|-------|-------|
+| Key | {TICKET_KEY} |
+| Summary | {summary} |
+| Type | {issuetype} |
+| Priority | {priority} |
+| Status | {status} |
+| Assignee | {assignee} |
+| Reporter | {reporter} |
+| Labels | {labels or "None"} |
+| Components | {components or "None"} |
+| Fix Version(s) | {fixVersions or "Not set"} |
+| Affected Version(s) | {versions or "Not set"} |
+
+### Description
+
+{Full ticket description text — verbatim, preserving all formatting}
+
+### Attachments
+
+{List each attachment by name and type, or "No attachments"}
+
+---
 
 ## Step 2 — Problem Understanding
-{content}
+
+### Problem Statement
+
+**Ticket classification:** {Bug (defect) / Story (enhancement)}
+
+| Dimension | Detail |
+|-----------|--------|
+| What is broken / missing | {1–2 sentences} |
+| Who is affected | {users / roles / clients} |
+| Expected behaviour | {what should happen} |
+| Actual behaviour | {what currently happens} |
+| Acceptance criteria | {bulleted list from ticket} |
+
+{If enhancement, include: "This is an enhancement — the system currently lacks X; we need to add Y."}
+
+### Attachment Analysis
+
+{For each attachment analysed: name, type, and key findings extracted.
+If no attachments: "No attachments — analysis skipped."}
+
+### Issue Diagram
+
+{If a draw.io diagram was generated: "Issue diagram generated — see embedded diagram below." Include diagram source or note path.
+If skipped: "Diagram skipped — single-file change / no complex data flow identified."}
+
+---
 
 ## Step 3 — Comments & Context
-{content}
 
-## Step 4 — Branch Created
-{content}
+### Comment Summary
 
-## Step 5 — Affected Code
-{content}
+{Bulleted list of key points from each comment — clarifications from reporter/PO, decisions made, constraints, related tickets, partial fixes.
+If no comments: "No comments on ticket — proceeding from description only."}
+
+### Prior Investigation Summary
+
+{If prior investigation was found in comments, reproduce the full Prior Investigation Summary block:
+
+  Prior Investigation Summary:
+  - Root cause identified: {what was found}
+  - Files already identified: {list}
+  - Attempted fixes: {what was tried and outcome}
+  - Confirmed working / not working: {what was already validated}
+  - Remaining unknowns: {what is still unresolved}
+
+If no prior investigation: "No prior investigation found in comments."}
+
+---
+
+## Step 4 — Development Branch
+
+| Field | Value |
+|-------|-------|
+| Base branch | {base branch name} |
+| Base branch source | {Fix Version / Affected Version / default: development} |
+| Feature branch | {Feature/TICKET_KEY_Title} |
+| Branch status | {Created and checked out / Skipped (headless mode)} |
+
+---
+
+## Step 5 — Locate Affected Code
+
+### File Map
+
+| File | Role | Key Location | Recent Git History |
+|------|------|-------------|-------------------|
+{Reproduce the complete file map table row by row}
+
+**Confidence:** {High / Medium / Low} — {one-line reason}
+
+### Class Hierarchy Analysis
+
+{If performed (mandatory for enhancements adding fields/methods):
+
+  Target class    : {ClassName}
+  Extends         : {AbstractBase or "No abstract base"}
+  Sibling classes : {list from grep, or "None found"}
+  Decision        : {New infrastructure placed in AbstractBase / Concrete class is correct owner — no siblings benefit}
+
+If not applicable: "Class hierarchy check not required — no new fields or methods added."}
+
+---
 
 ## Step 6 — Replication Guide
-{content}
+
+### Prerequisites
+
+{List of required preconditions — user role, test data, feature flags, environment config, etc.}
+
+### Environment
+
+{Which environment to use and any specific setup required}
+
+### Replication Steps
+
+{Numbered step-by-step list to reproduce the issue or trigger the missing feature}
+
+### Expected vs Actual
+
+| | Detail |
+|---|--------|
+| **Expected** | {what should happen} |
+| **Actual** | {what currently happens} |
+
+**Confidence:** {High / Medium / Low} — {one-line reason}
+
+### Service Restart Guidance
+
+{Which services need restarting after a fix is applied, in order — Plugin spawner, backend, GWT frontend, or "Frontend-only / Backend-only change" as applicable}
+
+---
 
 ## Step 7 — Root Cause Analysis
-{content}
+
+{--- FOR BUG TICKETS: reproduce the full Engineering Panel session ---}
+
+### 7a. Decision Tree Classification
+
+**Path:** `{e.g. BUG → UI ISSUE → Service call fails silently}`
+
+### 7b. Morgan's Lead Briefing
+
+{Reproduce the full Morgan briefing box verbatim — ticket, classification, primary suspect area, team assignments for Alex / Sam / Jordan / Riley, schedule}
+
+### 7c. Investigation — Mid-Point Check-In (T+2)
+
+{Reproduce the full mid-point check-in block verbatim — Alex, Sam, Jordan, Riley status reports and Morgan's response}
+
+### 7d. Hypothesis Submission (T+4)
+
+{Reproduce each hypothesis box verbatim:
+  - Alex — History & Regression Hypothesis
+  - Sam — Data Flow & Logic Hypothesis
+  - Jordan — Defensive Patterns Hypothesis
+  - Riley — Testing Impact Assessment}
+
+### 7e. Riley's Question + Morgan's Cross-Examination (T+5)
+
+{Reproduce the full cross-examination block verbatim:
+  - Riley's question and engineer's response
+  - Morgan's questions and all engineer responses}
+
+### 7f. Team Debate
+
+{Reproduce the full debate round verbatim — each challenge, response, and Morgan's close.
+If no challenges: "No challenges — team and tester accept each other's findings."}
+
+### 7g. Morgan's Verdict (T+6)
+
+{Reproduce the full verdict block verbatim:
+  - Score table (Alex / Sam / Jordan — N/15 pts)
+  - Tester's view paragraph
+  - Morgan's personal assessment
+  - Adopted root cause
+  - Verdict outcome box (🏆 / 🤝 / ⚡)}
+
+### 7h. Root Cause Statement
+
+{Reproduce the full Root Cause Statement block verbatim — Author, Approved by, Location, Mechanism, Trigger, Fix direction, Confidence, Team note, Tester note}
+
+{--- FOR ENHANCEMENT TICKETS: reproduce the Enhancement Direct Analysis ---}
+
+### Enhancement Statement
+
+{Reproduce the full Enhancement Statement block verbatim — What is missing, Insertion points, Approach, Class hierarchy, Partial exists, Confidence}
+
+---
 
 ## Step 8 — Proposed Fix
-{content}
+
+### Analysis Anchor
+
+{Reproduce the Root Cause Statement (bug) or Enhancement Statement (enhancement) verbatim — the anchor quoted at the top of the fix}
+
+### 8a. Proposed Solution
+
+{Reproduce the full solution narrative — approach description in plain language, then every before/after code block with annotations}
+
+### 8b. Alternative Approaches Considered
+
+| Alternative | Why rejected |
+|-------------|-------------|
+{Reproduce each row, or "No viable alternatives identified — single fix path confirmed."}
+
+### 8c. Morgan's Fix Review
+
+{Reproduce the full Fix Review block verbatim — all 7 checks and Morgan's verdict:
+  Mechanism alignment, Surgical scope, Regression risk, Team note honoured,
+  DB safety, Abstract class ownership, Tester concerns, Morgan's verdict (✅ / ⚠️ / 🔄)}
+
+### 8d. DB Migration Scripts
+
+{If schema changes required, reproduce full Oracle (.sql) and PostgreSQL (.pg) scripts.
+If not required: "No schema changes — DB migration not required."}
+
+---
 
 ## Step 9 — Impact Analysis
-{content}
+
+### 9a. Files Changed
+
+| File | Change | Reason |
+|------|--------|--------|
+{Reproduce the complete files-changed table}
+
+### 9b. Usage Reference Search
+
+{Reproduce the full symbol reference table — every changed symbol with type, callers found, and files}
+
+### 9c. Application-Wide Impact
+
+| Layer | Impact | Detail |
+|-------|--------|--------|
+{Reproduce the complete impact table — GWT Frontend, Backend API, Plugin/Workers, DB/Schema, Shared Utilities}
+
+### 9d. Regression Risks
+
+{Bulleted list of regression risks identified — flows affected, null risks, async timing concerns, flag side effects}
+
+### 9e. Affected Clients / Environments
+
+**Scope:** {Generic — all clients / Client-specific: {name} / DB-specific: Oracle vs PostgreSQL}
+
+{Explanation of why this scope applies}
+
+### 9f. Related Areas to Retest
+
+{Bulleted list of screens, flows, or features to smoke-test after the fix — derived from the caller search}
+
+### 9g. Risk Level
+
+**Overall risk:** {Low / Medium / High}
+
+{One paragraph justifying the risk rating}
+
+---
 
 ## Step 10 — Change Summary
-{content}
 
-## Step 11 — Session Stats
-{content}
+### Summary of Changes
+
+{Bulleted summary of every change made — file, what changed, and why}
+
+### Suggested Commit Message
+
 ```
+{Full commit message block — subject line + body}
+```
+
+### Pull Request Description
+
+{Reproduce the full PR description template — Summary bullets, Test plan checklist, labels, risk level}
+
+---
+
+## Step 11 — Session Statistics
+
+| Metric | Value |
+|--------|-------|
+| Steps completed | {N / 12} |
+| Elapsed time | {HH:MM} |
+| Estimated token count | {N tokens} |
+| Estimated cost (Sonnet 4.6) | {$X.XX} |
+| Ticket type | {Bug / Enhancement} |
+| RCA path | {Engineering Panel / Direct Analysis (7-ENH)} |
+| Fix applied to branch | {Yes / No / Partial} |
+
+````
 
 #### 12c. Convert to PDF
 

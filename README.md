@@ -94,115 +94,89 @@ A **confidence gate** applies: High confidence proceeds automatically; Medium no
 
 ---
 
-### Step 7 — Root Cause Analysis (Engineering Panel)
+### Step 7 — Root Cause Analysis
 
-This is the most rigorous step in the workflow. A four-person senior engineering team convenes: **Morgan** (Lead Developer) chairs and has final authority; **Alex**, **Sam**, and **Jordan** (Senior Engineers) investigate independently under a time constraint and compete for the best analysis. The team debates, challenges each other's findings, and converges on a single agreed root cause.
+Step 7 has two paths. The correct path is chosen based on the Diagnostic Decision Tree (7a):
 
-#### 7a. The Team
+| Ticket type | Path |
+|-------------|------|
+| **Bug** (Data / UI / Async / Regression) | Engineering Panel (7b–7i) |
+| **Enhancement** (feature that never existed) | Direct Analysis (Step 7-ENH) |
 
-| Role | Name | Background | Mandate |
-|------|------|-----------|---------|
-| **Lead Developer** | **Morgan** | 20 yrs Java, ex-systems architect, deep GWT/Spring/Oracle | Chairs. Sets schedule. Reviews hypotheses. Asks probing questions. Facilitates debate. Gives binding verdict. Approves the Root Cause Statement. |
-| Senior Engineer | Alex | 12 yrs Java/GWT | Code archaeology & regression forensics — *"Every bug has a birthday."* |
-| Senior Engineer | Sam | 10 yrs full-stack Java, Spring, GWT RPC | Runtime data flow & logic — *"Follow the data to the divergence point."* |
-| Senior Engineer | Jordan | 15 yrs Java, architect background | Defensive patterns & structural anti-patterns — *"I've catalogued every way Java devs shoot themselves in the foot."* Jordan runs a prioritised 20-pattern checklist covering null safety, async errors, silent exceptions, thread safety, resource leaks, mutable static state, layer violations, serialization mismatches, broken equals/hashCode contracts, breaking API changes, circular dependencies, hardcoded environment values, and class hierarchy ownership. |
+#### 7a. Diagnostic Decision Tree
 
-Morgan is not competing — Morgan arbitrates. Morgan's verdict is binding and may endorse, refine, or override any engineer's hypothesis.
-
-#### 7b. How the Session Runs
-
-The investigation runs across six sequential phases in a defined time block:
-
-| Phase | Who | Time | What happens |
-|-------|-----|------|-------------|
-| **Briefing** | Morgan | 1 min | Reads ticket + file map, assigns focus areas to each engineer, sets schedule |
-| **Investigation** | Alex, Sam, Jordan | 4 min | Each investigates independently — max 8 targeted operations per engineer |
-| **Mid-point check-in** | All | T+2 min | Engineers report progress to Morgan; Morgan acknowledges or redirects |
-| **Hypothesis submission** | Alex, Sam, Jordan | T+4 min | Each submits final structured hypothesis with evidence |
-| **Cross-examination & debate** | Morgan + team | T+5–6 min | Morgan poses 1–2 probing questions per hypothesis; one round of engineer-to-engineer challenges |
-| **Morgan's verdict** | Morgan | T+6 min | Scores hypotheses, weighs in personally, declares adopted root cause |
-
-Total session: approximately **6–8 minutes**.
-
-#### 7c. Investigation Budget (Engineers)
-
-Each engineer has a maximum of **8 targeted grep/read operations** in their 4-minute window:
-- High-confidence evidence found in ≤ 4 ops → stop and report immediately
-- No clear hypothesis after 8 ops → commit to best available with Medium/Low confidence and state what would confirm it
-- Every claim requires a `file:line` or commit reference — unsupported assertions are challenged by Morgan
-
-Morgan may run up to **4 additional targeted reads** independently to verify contested claims.
-
-#### 7d. Diagnostic Decision Tree
-
-Before engineers begin, the failure mode is classified:
+The failure mode is classified first:
 - **BUG — Data Issue** → NPE, field mapping error, SQL/ORM misconfiguration
 - **BUG — UI Issue** → GWT callback not wired, RPC error swallowed, missing panel reload
 - **BUG — Async/Timing Issue** → race condition, deadlock, out-of-order execution
 - **BUG — Regression** → was working, now broken — Alex leads
-- **Enhancement** → pure addition or modification of existing flow
+- **Enhancement** → pure addition or modification of existing flow → **skip the Engineering Panel; go to Step 7-ENH**
 
-The classification drives each engineer's priority order and Morgan's briefing focus.
+---
 
-#### 7e. Scoring & Verdict
+#### Step 7-ENH — Enhancement Direct Analysis *(Enhancement tickets only)*
 
-Morgan applies an 8-criterion scoring rubric (max 14 pts per hypothesis):
+For enhancements, Claude skips the Engineering Panel entirely and performs a direct analysis:
 
-| Criterion | Pts |
-|-----------|-----|
-| Specific `file:line` with code evidence | +3 |
-| Fix direction clear and immediately actionable | +2 |
-| Explains intermittent behaviour (if applicable) | +2 |
-| Self-rated High confidence supported by evidence | +1 |
-| Corroborated by another engineer independently | +2 |
-| Found efficiently (≤ 5 ops) | +1 |
-| Survived cross-examination without revision | +2 |
-| Debate challenge successfully deflected with evidence | +1 |
-
-The highest scorer wins. Morgan may endorse unchanged, refine with debate findings, or override all three if a read reveals something the team missed. Morgan's personal assessment always accompanies the score.
-
-Verdict is displayed as one of:
+1. **What needs to be added** — explains what the feature is and why it does not currently exist; states `"The system currently lacks X. We need to add Y at Z."` with specific file:line references
+2. **Insertion point analysis** — identifies every file, method, and layer that must be touched, with a reason for each; runs the class hierarchy check (same as Step 5) to confirm whether new fields/methods belong in the abstract base or the concrete class
+3. **Git history check** — confirms no partial implementation exists in any branch; if a partial exists, builds on it rather than duplicating
+4. **Enhancement Statement** — a structured summary block (replaces the Root Cause Statement for Step 8):
 
 ```
-╔══════════════════════════════════════════════════════════════════╗
-║  🏆  BEST ANALYSIS: {Name}           Score: {N} / 14 pts        ║
-║  Morgan: "{Endorsement or refinement note}"                      ║
-╚══════════════════════════════════════════════════════════════════╝
-```
-```
-╔══════════════════════════════════════════════════════════════════╗
-║  🤝  CONSENSUS: {Name} & {Name} — same root cause independently  ║
-║  Morgan: "{Confirmation note}"                                   ║
-╚══════════════════════════════════════════════════════════════════╝
-```
-```
-╔══════════════════════════════════════════════════════════════════╗
-║  ⚡  MORGAN OVERRIDE — independent read required                  ║
-║  Morgan: "{What Morgan found that the team missed}"              ║
-╚══════════════════════════════════════════════════════════════════╝
-```
-
-#### 7f. Root Cause Statement — Team Sign-Off
-
-The final root cause statement is authored by the winning engineer and approved by Morgan:
-
-```
-ROOT CAUSE STATEMENT
+ENHANCEMENT STATEMENT
 ────────────────────────────────────────────────────────────────────
-Author    : {Winning Engineer}  |  Approved by: Morgan
-Location  : {file:line}
-Mechanism : [how the bug manifests — precise, code-level]
-Trigger   : [what user action or event makes it observable]
-Fix dir.  : [one sentence on the correct fix — detail in Step 8]
-Confidence: High / Medium / Low
-Team note : [any nuance raised in debate that the fix author must
-             not overlook — omit if none]
+What is missing : [one sentence — what the system cannot currently do]
+Insertion points: [file:line for each touch point]
+Approach        : [one paragraph — the design decision]
+Class hierarchy : [N/A / Confirmed concrete class is correct /
+                   Moved to {AbstractBase} — {N} sibling classes benefit]
+Partial exists  : [No — confirmed by git log / Yes — {branch:file:line}]
+Confidence      : High / Medium / Low
 ────────────────────────────────────────────────────────────────────
 ```
 
-#### 7g. Morgan Reviews the Proposed Fix (Step 8 gate)
+If confidence is Low, Claude stops and asks for developer clarification before proceeding to Step 8.
 
-After the fix is proposed in Step 8, Morgan vets it against the Root Cause Statement across **six checks**: mechanism alignment, surgical scope, regression risk, team note honoured, DB safety, and **abstract class ownership** (if new fields or methods are added to a concrete class, Morgan confirms whether the abstract base is the correct owner — greps for sibling subclasses and flags if infrastructure should be moved up). Verdict is one of:
+After completing Step 7-ENH, Claude proceeds directly to Step 8 (Propose the Fix).
+
+---
+
+#### Engineering Panel *(Bug tickets only — 7b through 7i)*
+
+For bug tickets, a four-person senior engineering team convenes: **Morgan** (Lead Developer) chairs and has final authority; **Alex**, **Sam**, and **Jordan** (Senior Engineers) investigate independently under a time constraint and compete for the best analysis. The team debates, challenges each other's findings, and converges on a single agreed root cause.
+
+**The team:**
+
+| Role | Name | Background | Mandate |
+|------|------|-----------|---------|
+| **Lead Developer** | **Morgan** | 20 yrs Java, ex-systems architect, deep GWT/Spring/Oracle | Chairs. Sets schedule. Reviews hypotheses. Asks probing questions. Facilitates debate. Gives binding verdict. Approves the Root Cause Statement. Riley's concerns are factored into Morgan's verdict and Fix Review. |
+| Senior Engineer | Alex | 12 yrs Java/GWT | Code archaeology & regression forensics — *"Every bug has a birthday."* |
+| Senior Engineer | Sam | 10 yrs full-stack Java, Spring, GWT RPC | Runtime data flow & logic — *"Follow the data to the divergence point."* |
+| Senior Engineer | Jordan | 15 yrs Java, architect background | Defensive patterns & structural anti-patterns — *"I've catalogued every way Java devs shoot themselves in the foot."* Jordan runs a prioritised 20-pattern checklist covering null safety, async errors, silent exceptions, thread safety, resource leaks, mutable static state, layer violations, serialization mismatches, broken equals/hashCode contracts, breaking API changes, circular dependencies, hardcoded environment values, and class hierarchy ownership. |
+| **Senior Lead Tester** | **Riley** | 18 yrs QA & test architecture, Java enterprise, GWT, regression suites | Maps test surface and regression risk. Questions engineer findings on impact and testability grounds. Not competing — challenging. Riley's open question must be answered before a fix is approved; any High regression risk must be addressed or explicitly accepted by Morgan. |
+
+Morgan and Riley are not competing — Morgan arbitrates, Riley challenges. Morgan's verdict is binding and must include a response to Riley's assessment.
+
+**How the session runs:**
+
+| Phase | Who | Time | What happens |
+|-------|-----|------|-------------|
+| **Briefing** | Morgan | 1 min | Reads ticket + file map, assigns focus areas to engineers and Riley, sets schedule |
+| **Investigation** | Alex, Sam, Jordan + Riley | 4 min | Engineers investigate independently (max 8 ops each); Riley maps impact surface (max 6 ops) |
+| **Mid-point check-in** | All | T+2 min | All four report progress to Morgan; Morgan acknowledges or redirects |
+| **Hypothesis + assessment submission** | All | T+4 min | Engineers submit structured hypotheses; Riley submits Testing Impact Assessment |
+| **Riley's questions + cross-examination** | Riley + Morgan | T+5 min | Riley poses open question to named engineer; Morgan cross-examines all hypotheses |
+| **Debate** | All | T+5–6 min | One round of challenges — engineers on code grounds, Riley on impact/testability grounds |
+| **Morgan's verdict** | Morgan | T+6 min | Scores hypotheses (max 15 pts), addresses Riley's assessment, declares adopted root cause |
+
+Each engineer has a maximum of **8 targeted grep/read operations**; Riley has **6**. Morgan may run up to **4 additional targeted reads** to verify contested claims.
+
+Morgan applies a 9-criterion scoring rubric (max 15 pts — the 9th criterion awards +1 if the fix direction is testable and Riley raised no High regression risk against it). The highest scorer wins. Morgan must include a **Tester's view** block in the verdict addressing Riley's regression risk and open question. The final Root Cause Statement includes a **Tester note** field capturing any outstanding Riley concern the fix author must handle.
+
+#### Morgan Reviews the Proposed Fix (Step 8 gate)
+
+After the fix is proposed in Step 8, Morgan vets it across **seven checks**: mechanism alignment, surgical scope, regression risk, team note honoured, DB safety, abstract class ownership, and **tester concerns addressed** (Riley's High/Medium impact concerns from Step 7e must be resolved or explicitly accepted as risk). Verdict is one of:
 
 - **✅ APPROVED** — fix is correct, surgical, and safe to apply
 - **⚠️ APPROVED WITH CONDITIONS** — apply after addressing a specific requirement
@@ -214,7 +188,9 @@ The fix is not applied until Morgan approves.
 
 ### Step 8 — Propose the Fix
 
-Claude reads the identified files (using targeted line ranges from Step 5) and produces a fix grounded in the Root Cause Statement from Step 7:
+Claude reads the identified files and produces a fix grounded in the analysis from Step 7:
+- **Bug tickets** — anchored to the Root Cause Statement from Step 7i (winning engineer, approved by Morgan)
+- **Enhancement tickets** — anchored to the Enhancement Statement from Step 7-ENH
 
 - **Proposed solution** — plain-language description of the approach before any code is shown
 - **Code changes** — only the code that needs to change, shown as clear before/after blocks. Each change is explicitly tied to the root cause mechanism.
@@ -261,9 +237,29 @@ IV-3672 | ~14m elapsed | ~5,100 in / ~2,040 out tokens | est. cost $0.0462 (Sonn
 
 ### Step 12 — PDF Analysis Report
 
-Claude generates a full PDF report of the complete analysis and saves it to a configurable output folder:
+Claude generates a full-detail PDF report of the complete analysis — every section from every step — and saves it to a configurable output folder.
 
-- **Output folder** — reads `$CLAUDE_REPORT_DIR` environment variable if set; defaults to `$HOME/Documents/DevelopmentTasks/Claude-Analyzed-Tickets/` (works on macOS, Linux, and Windows)
+#### Report contents
+
+The PDF is structured in 11 sections, one per step. Every section is fully populated from the actual analysis output — nothing is summarised or omitted:
+
+| Section | Contents captured |
+|---------|------------------|
+| **Step 1 — Jira Ticket** | Full field table (key, type, priority, status, assignee, reporter, labels, components, fix/affected versions) + complete ticket description verbatim + attachment list |
+| **Step 2 — Problem Understanding** | Problem statement table (what/who/expected/actual/acceptance criteria), ticket classification, attachment analysis findings, draw.io diagram note |
+| **Step 3 — Comments & Context** | Comment summary bullets, full Prior Investigation Summary block (if found) |
+| **Step 4 — Development Branch** | Base branch selected + reason, feature branch name, creation status |
+| **Step 5 — Locate Affected Code** | Full file map table (file, role, key location, recent git history), confidence level, full class hierarchy analysis (if performed) |
+| **Step 6 — Replication Guide** | Prerequisites, environment, numbered replication steps, expected vs actual table, confidence level, service restart guidance |
+| **Step 7 — Root Cause Analysis** | **Bug tickets:** full Engineering Panel session — Morgan's briefing, mid-point check-in (Alex/Sam/Jordan/Riley), all four hypothesis/assessment blocks, Riley's question + engineer response, Morgan's cross-examination + engineer responses, full debate round, Morgan's scored verdict (with Tester's view), Root Cause Statement (with Tester note). **Enhancement tickets:** full Enhancement Statement (7-ENH) |
+| **Step 8 — Proposed Fix** | Quoted analysis anchor, full proposed solution narrative + all before/after code blocks with annotations, alternatives table, full Morgan Fix Review block (all 7 checks + verdict), DB migration scripts (if applicable) |
+| **Step 9 — Impact Analysis** | Files changed table, usage reference search results table (all symbols), application-wide impact table, regression risks list, affected clients/environments, retest areas, risk level with justification |
+| **Step 10 — Change Summary** | Change summary bullets, suggested commit message, full PR description template |
+| **Step 11 — Session Statistics** | Steps completed, elapsed time, estimated tokens, estimated cost, ticket type, RCA path taken, fix applied flag |
+
+#### Generation
+
+- **Output folder** — reads `$CLAUDE_REPORT_DIR` environment variable if set; defaults to `$HOME/Documents/DevelopmentTasks/Claude-Analyzed-Tickets/`
 - **PDF generation** — tries three methods in order, stopping at the first that succeeds:
   1. **`pandoc`** — best quality, handles tables and code blocks correctly; install via `brew install pandoc` (macOS), `apt install pandoc` (Linux), or the [pandoc installer](https://pandoc.org/installing.html) (Windows)
   2. **Chrome / Chromium headless** — uses `--print-to-pdf`; works on all platforms if Chrome is installed; no additional setup required
@@ -943,10 +939,10 @@ When `AUTO_MODE=true` is set, all interactive confirmation gates are bypassed an
 | Step 4 — Branch creation | Run `git checkout -b …` | **Skipped** — reports the branch name only; no git commands run |
 | Step 5 — Low file-map confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — manual review required` |
 | Step 6 — Low replication confidence | Stop and ask developer | Proceed with `⚠️ LOW CONFIDENCE — assumptions noted` |
-| Step 7 — Morgan briefing | Morgan opens and assigns focus | Briefing runs automatically |
-| Step 7 — Mid-point check-in | Engineers report progress to Morgan | All three submit status; Morgan responds automatically |
-| Step 7 — Cross-examination & debate | Morgan questions engineers; one challenge round | Runs automatically; no developer input required |
-| Step 7 — Morgan's verdict | Morgan scores and declares root cause | Verdict runs automatically |
+| Step 7 — Morgan briefing *(Bug only)* | Morgan opens and assigns focus | Briefing runs automatically |
+| Step 7 — Mid-point check-in *(Bug only)* | Engineers and Riley report progress to Morgan | All four submit status; Morgan responds automatically |
+| Step 7 — Riley's questions + cross-examination & debate *(Bug only)* | Riley questions engineer; Morgan cross-examines; one challenge round | Runs automatically; no developer input required |
+| Step 7 — Morgan's verdict *(Bug only)* | Morgan scores and declares root cause | Verdict runs automatically |
 | Step 8 — Morgan fix review | Morgan vets the proposed fix | Runs automatically; rework loop runs once if needed |
 | Step 8 — Apply fix prompt | Ask yes / no / partial | **Defaults to no** — proposes the fix only; no files are edited |
 
@@ -1287,6 +1283,37 @@ claude plugin update prevoir@prevoir
 | 13 | Step 8 — Propose Fix | Root Cause Statement quoted verbatim as mandatory anchor. Each code change annotated with which mechanism it addresses. Alternative approaches table added. |
 | 14 | Step 10 — Change Summary | PR description template updated to include Root Cause Statement with winning engineer attribution and Morgan's approval. |
 | 15 | Steps renumbered | New dedicated RCA step inserted as Step 7 (SKILL). Old Step 7 (Propose Fix) → Step 8. Old Step 8 (Impact) → Step 9. Old Step 9 (Summary) → Step 10. Old Step 10 (Stats) → Step 11. Old Step 11 (PDF) → Step 12. Total: 12 SKILL steps. |
+
+#### Engineering Panel — Senior Lead Tester (Riley)
+
+| # | Area | Change |
+|---|------|--------|
+| 22 | Step 7 — Team | **Riley added as Senior Lead Tester** — 18 yrs QA and test architecture for Java enterprise and GWT applications. Riley is not competing for Best Analysis — Riley challenges and assesses from a testing perspective. Riley's concerns carry weight: any High regression risk or unanswered open question must be addressed by Morgan in the verdict and Fix Review. |
+| 23 | Step 7b — Briefing | **Morgan's briefing extended** — Riley receives an explicit assignment in the Lead Briefing block: map the test surface, identify affected user flows, flag edge cases the engineers may miss, and raise any testability concern with the suspected fix direction. Schedule updated to include Riley's question slot at T+5. |
+| 24 | Step 7c — Investigation | **Riley's parallel impact assessment** — runs alongside engineer investigation with a capped budget of 6 operations. Riley reviews the ticket acceptance criteria, replication guide, affected file map, and all user flows passing through suspect files. Output: affected flows, edge cases, testability assessment, and one open question directed at a specific engineer or Morgan. |
+| 25 | Step 7d — Mid-point check-in | **Riley added to mid-point check-in** — Riley submits a progress status alongside the three engineers. Morgan may redirect Riley's focus (e.g. "the cancel path concern is valid — include a test scenario for it"). |
+| 26 | Step 7e — Assessment submission | **Testing Impact Assessment block** — Riley submits a structured assessment (hypothesis risk, affected flows, edge cases, testability, regression risk severity, open question) at T+4 alongside the engineer hypotheses. The assessment is advisory, not scored. |
+| 27 | Step 7f — Cross-examination | **Riley's questions phase** — Riley poses the Open question to the named engineer before Morgan's cross-examination begins. The engineer responds with evidence. Morgan's questions follow. |
+| 28 | Step 7g — Debate | **Riley can challenge in the debate round** — Riley may mount one challenge on impact or testability grounds (not code grounds). Challenge format matches engineer challenges but focuses on affected flows and regression risk. |
+| 29 | Step 7h — Verdict | **Scoring rubric extended to 15 pts** — new 9th criterion: +1 if the fix direction is testable and Riley raised no High regression risk against it. Verdict block now includes a mandatory **Tester's view** paragraph where Morgan addresses Riley's assessment. Summary block includes a Riley line. |
+| 30 | Step 7i — Root Cause Statement | **Tester note field added** — the Root Cause Statement now includes an optional Tester note (Riley's key concern or confirmation) that the fix author must not overlook. |
+| 31 | Step 8c — Morgan Fix Review | **Seventh check added: Tester concerns** — Morgan confirms whether Riley's High/Medium impact concerns are addressed by the proposed fix, or explicitly accepts them as risk. Fix Review output block updated with `Tester concerns` field. |
+
+#### Enhancement Workflow — Direct Analysis Path
+
+| # | Area | Change |
+|---|------|--------|
+| 32 | Step 7 — Enhancement tickets | **Engineering Panel skipped for enhancements** — when the Decision Tree classifies a ticket as Enhancement, Step 7 now routes directly to Step 7-ENH (Direct Analysis) and bypasses the full Engineering Panel. The panel (Morgan + Alex + Sam + Jordan + Riley) is for bugs only. |
+| 33 | Step 7-ENH — Direct Analysis | **New four-part enhancement analysis**: (a) what needs to be added (file:line references), (b) insertion point analysis per touch point with class hierarchy check, (c) git history check confirming no partial implementation exists, (d) Enhancement Statement block that anchors Step 8 (replaces Root Cause Statement for enhancements). |
+| 34 | Step 8 — Anchor | **Dual anchor support** — Step 8 now anchors to either the Root Cause Statement (bug) or Enhancement Statement (enhancement) depending on ticket type. Annotation text updated to reference the correct statement type. |
+
+#### PDF Report — Full-Detail Capture
+
+| # | Area | Change |
+|---|------|--------|
+| 35 | Step 12 — PDF Report | **Report upgraded from placeholder to full-detail capture** — the Markdown source template (12b) now contains a structured section for every step. Each section is populated verbatim from the actual analysis output — no summaries, no abbreviations. The full Engineering Panel session (all phases: briefing, mid-point, hypotheses, Riley's assessment, cross-examination, debate, verdict, Root Cause Statement) is reproduced in the report. Enhancement tickets reproduce the full Enhancement Statement. |
+| 36 | Step 12 — PDF Report | **11-section structure defined** — one section per step (Steps 1–11), each with explicit sub-headings and table/block templates matching the step's actual output format. Covers: Jira fields + description, problem statement table, comment summary + prior investigation, branch details, file map + class hierarchy, replication steps + service restart guidance, full RCA session or Enhancement Statement, full proposed fix + Morgan Fix Review, impact tables + regression risks, change summary + PR template, session statistics. |
+| 37 | Step 12 — PDF Report | **README Step 12 section updated** — now includes a Report Contents table describing what is captured in each of the 11 sections, so developers know the report contains the complete analysis record. |
 
 #### Analysis Quality — Enhancements & Abstract Class Ownership
 
