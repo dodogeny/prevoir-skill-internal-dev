@@ -20,9 +20,11 @@ If the MCP call fails (authentication error, ticket not found, MCP not running),
 
 ### Step 2 — Analyse & Contextualise
 
-Claude analyses the ticket description and all attachments, and produces:
+Claude analyses the ticket description, all linked tickets, and all attachments, and produces:
 
-- **Attachment review & diagnostic artefact analysis** — All qualifying attachments up to 10 MB are downloaded and analysed. Binary files, archives, and files over 10 MB are skipped automatically. Each attachment is identified by filename, type, and a one-line finding before detailed analysis:
+- **Problem statement** — A concise description of what is broken or missing, who is affected, what the expected behaviour is, what the current behaviour is, and a clear list of acceptance criteria. Bugs are explicitly labelled as defects; enhancements are explicitly labelled as stories.
+- **Linked & associated tickets** — All issue links are fetched (blocked by, blocks, relates to, cloned from, duplicates, is caused by, parent/child epics, sub-tasks). For each linked ticket, Claude retrieves the full ticket details and extracts any context that enriches the current analysis: prior investigation findings, acceptance criteria changes, root cause or fix details from related bugs, design decisions from parent epics, and known workarounds from related tickets. The same attachment analysis rules apply to qualifying attachments on linked tickets. All relevant findings are carried forward into Step 3's Prior Investigation Summary.
+- **Attachment review & diagnostic artefact analysis** — All qualifying attachments up to 10 MB are downloaded and analysed (from both the primary ticket and any linked tickets). Binary files, archives, and files over 10 MB are skipped automatically. Each attachment is identified by filename, type, and a one-line finding before detailed analysis:
   - *Screenshots / images* — UI state, error banners, field values, and any visible error codes are described
   - *Log files* — scanned for stack traces, exception chains, and error patterns; root cause frame extracted
   - *Thread dumps* — blocked/waiting threads identified, deadlock chains traced, contention point noted with class/method/line
@@ -30,7 +32,6 @@ Claude analyses the ticket description and all attachments, and produces:
   - *XML / config files* — relevant config values checked for incorrect or missing entries
   - *draw.io diagrams* — flow depicted is described
   All attachment findings are carried forward into the root cause analysis in Step 7.
-- **Problem statement** — A concise description of what is broken or missing, who is affected, what the expected behaviour is, what the current behaviour is, and a clear list of acceptance criteria. Bugs are explicitly labelled as defects; enhancements are explicitly labelled as stories.
 - **Issue diagram** (optional) — For issues involving a non-obvious data flow or multi-step component interaction, Claude generates a draw.io XML diagram (`.drawio` file) showing the happy path alongside the broken path, annotated with the key method calls and data values involved. Trivial single-file bugs skip this automatically.
 
 ---
@@ -246,7 +247,7 @@ The PDF is structured in 11 sections, one per step. Every section is fully popul
 | Section | Contents captured |
 |---------|------------------|
 | **Step 1 — Jira Ticket** | Full field table (key, type, priority, status, assignee, reporter, labels, components, fix/affected versions) + complete ticket description verbatim + attachment list |
-| **Step 2 — Problem Understanding** | Problem statement table (what/who/expected/actual/acceptance criteria), ticket classification, attachment analysis findings, draw.io diagram note |
+| **Step 2 — Problem Understanding** | Problem statement table (what/who/expected/actual/acceptance criteria), ticket classification, linked & associated tickets summary (one line per linked ticket with type/status/relevance), attachment analysis findings, draw.io diagram note |
 | **Step 3 — Comments & Context** | Comment summary bullets, full Prior Investigation Summary block (if found) |
 | **Step 4 — Development Branch** | Base branch selected + reason, feature branch name, creation status |
 | **Step 5 — Locate Affected Code** | Full file map table (file, role, key location, recent git history), confidence level, full class hierarchy analysis (if performed) |
@@ -1346,6 +1347,7 @@ claude plugin update prevoir@prevoir
 | 1 | Step 1 — Ingest Ticket | Field restriction — fetches only 13 specific fields; skips sprint, epic, watcher, and changelog data to reduce token usage |
 | 2 | Step 1 — Ingest Ticket | MCP failure guard — stops on auth error / ticket not found / MCP unavailable and gives recovery instructions before proceeding |
 | 3 | Step 2 — Analyse & Contextualise | Draw.io issue diagram — generates a happy-path vs broken-path `.drawio` diagram for non-trivial flows; auto-skips for single-file bugs |
+| 3a | Step 2 — Analyse & Contextualise | Linked ticket context — fetches all associated/linked tickets (blocked by, relates to, cloned from, parent epics, sub-tasks) and extracts prior findings, design decisions, and acceptance criteria to enrich analysis; applies same attachment rules to linked ticket files |
 | 4 | Step 3 — Create Branch | Feature/Release branch search — checks for `Feature/Release_{VERSION}` before falling back to the plain version branch |
 | 5 | Step 3 — Create Branch | Base branch confirmation gate — verifies branch exists locally or remotely before any `git checkout`; asks developer if not found |
 | 6 | Step 4 — Locate Code | Grep-first, read-second rule — explicitly forbids speculative full-file reads; token cost rationale documented |

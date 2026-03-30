@@ -94,6 +94,28 @@ If the ticket type is a **Bug**, explicitly state:
 If the ticket type is a **Story/Enhancement**, explicitly state:
 > "This is an enhancement — the system currently lacks X; we need to add Y."
 
+#### Linked & Associated Tickets
+
+Fetch all issue links from the ticket (e.g. "is blocked by", "blocks", "relates to", "is cloned from", "duplicates", "is caused by", parent/child epic links, sub-task relationships).
+
+For each linked ticket found:
+1. Retrieve the full ticket details (summary, description, status, type, resolution, attachments).
+2. Extract any context that enriches the current analysis:
+   - Prior investigations or findings already documented
+   - Acceptance criteria or scope changes that affect this ticket
+   - Root cause or fix details from a related bug (especially "is caused by" / "is cloned from" links)
+   - Design decisions or constraints described in parent epics or stories
+   - Known workarounds or regression notes from "relates to" tickets
+3. Summarise each linked ticket in one line: `[KEY] (type, status) — one-sentence relevance to this ticket`
+
+Apply the same attachment analysis rules (size limits, file type handling) to qualifying attachments on linked tickets.
+
+If the linked ticket provides no additional context beyond what the primary ticket already contains, state: "No additional context from linked ticket [KEY]."
+
+If there are no linked tickets, state: "No linked tickets found."
+
+Carry all relevant findings from linked tickets forward into the **Prior Investigation Summary** in Step 3.
+
 #### Diagnostic Artefact Analysis
 
 Download and analyse all qualifying attachments from the ticket. Apply these rules:
@@ -1275,6 +1297,12 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate eve
 | Acceptance criteria | {bulleted list from ticket} |
 
 {If enhancement, include: "This is an enhancement — the system currently lacks X; we need to add Y."}
+
+### Linked & Associated Tickets
+
+{For each linked ticket: "[KEY] (type, status) — one-sentence relevance and any additional context extracted."
+If no linked tickets: "No linked tickets found."
+If linked tickets exist but provide no new context: "No additional context from linked ticket [KEY]."}
 
 ### Attachment Analysis
 
