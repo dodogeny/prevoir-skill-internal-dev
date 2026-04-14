@@ -1,4 +1,4 @@
-# Prevoir Internal Dev Skill — Claude Code Plugin `v1.2.1`
+# Prx Internal Dev Skill — Claude Code Plugin `v1.2.1`
 
 A [Claude Code](https://claude.ai/code) plugin that gives Claude a structured, end-to-end developer workflow for V1 Jira tickets. The skill has two modes:
 
@@ -285,16 +285,16 @@ Every Dev and Review session feeds into a **shared, persistent knowledge base** 
 
 #### Two storage modes
 
-Choose how the KB is stored by setting the `PREVOIR_KB_MODE` environment variable:
+Choose how the KB is stored by setting the `PRX_KB_MODE` environment variable:
 
 | Mode | KB location | Distribution | Access control | Encryption |
 |------|-------------|-------------|----------------|-----------|
-| **local** *(default)* | `$HOME/Documents/Prevoir/KnowledgeBase/` | None — private to one machine | Local filesystem | None — plain Markdown |
+| **local** *(default)* | `$HOME/Documents/Prx/KnowledgeBase/` | None — private to one machine | Local filesystem | None — plain Markdown |
 | **distributed** | Local clone of your private KB repo | Via git push/pull to your team's own private repository | Your git server's permissions (Bitbucket, GitHub Enterprise, GitLab…) | Optional AES-256-CBC (`.md.enc`) |
 
 **Local mode** is the default and requires no extra configuration. The KB lives on your machine only.
 
-**Distributed mode** shares the KB across your whole team via a **dedicated private git repository you own and control** (`PREVOIR_KB_REPO`). You decide who can access it — restrict it to your company's Bitbucket or GitHub Enterprise org and the knowledge never leaves your environment. No data goes to any public repository.
+**Distributed mode** shares the KB across your whole team via a **dedicated private git repository you own and control** (`PRX_KB_REPO`). You decide who can access it — restrict it to your company's Bitbucket or GitHub Enterprise org and the knowledge never leaves your environment. No data goes to any public repository.
 
 > **Why a separate private repo?** Keeping the KB in its own dedicated repository makes access control straightforward: grant or revoke access to the KB repo independently of any product codebase. A company-owned private Bitbucket or internal GitLab is ideal — only employees with access to that repo can read or push knowledge base content.
 
@@ -303,7 +303,7 @@ Choose how the KB is stored by setting the `PREVOIR_KB_MODE` environment variabl
 The KB is a standalone git repository with a flat, predictable layout. Whether stored locally or distributed, the directory structure is always the same:
 
 ```
-prevoir-kb/                         ← root of the KB git repository
+prx-kb/                         ← root of the KB git repository
 ├── README.md                       ← auto-created on first push (repo description)
 │
 ├── PALACE.md                       ← Memory Palace — primary retrieval layer
@@ -348,11 +348,11 @@ prevoir-kb/                         ← root of the KB git repository
 #### Storage layout (on developer's machine)
 
 ```
-$HOME/.prevoir/kb/                  ← KNOWLEDGE_DIR (local clone of the private KB repo)
+$HOME/.prx/kb/                  ← KNOWLEDGE_DIR (local clone of the private KB repo)
 │                                     Contains the files above.
 │                                     In encrypted mode: .md.enc files at rest.
 │
-/tmp/prevoir-kb-{PID}/              ← KB_WORK_DIR (encrypted mode only)
+/tmp/prx-kb-{PID}/              ← KB_WORK_DIR (encrypted mode only)
 │                                     Decrypted .md files for the current session.
 │                                     Deleted automatically after push.
 ```
@@ -367,9 +367,9 @@ Encryption is not required when the KB is already in a private repository with p
 |----------|--------|
 | Algorithm | AES-256-CBC |
 | Key derivation | PBKDF2-SHA512, 310,000 iterations, random salt per file |
-| Key source | `PREVOIR_KB_KEY` env var — **never committed to git** |
+| Key source | `PRX_KB_KEY` env var — **never committed to git** |
 | Files on disk (encrypted) | Binary `.md.enc` blobs — appear as garbage without the key |
-| Files in session (encrypted) | Decrypted to `/tmp/prevoir-kb-{PID}/` only; deleted after push |
+| Files in session (encrypted) | Decrypted to `/tmp/prx-kb-{PID}/` only; deleted after push |
 | Files on disk (unencrypted) | Plain `.md` — accessed directly from the local clone |
 
 #### Team distribution (distributed mode)
@@ -424,7 +424,7 @@ Dev D  pushes while Dev E is also pushing:
 6th developer joins late and manually pushes their KB files
 (without using the skill — raw git commands):
 
-  cd $HOME/.prevoir/kb
+  cd $HOME/.prx/kb
   git add tickets/IV-3910.md shared/business-rules.md
   git commit -m "manual: add IV-3910 findings"
   git push origin main
@@ -641,7 +641,7 @@ The polling script monitors Jira for tickets assigned to you with status **To Do
 
 1. Log in to [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
 2. Click **Create API token**
-3. Name it (e.g. `Prevoir Poll Jira`) and click **Create**
+3. Name it (e.g. `Prx Poll Jira`) and click **Create**
 4. Copy the token — it will not be shown again
 
 ---
@@ -653,16 +653,16 @@ Copy `poll-jira.sh` from this repository to your scripts folder:
 **macOS / Linux:**
 ```bash
 # Create the scripts folder
-mkdir -p ~/Documents/Prevoir/Scripts
+mkdir -p ~/Documents/Prx/Scripts
 
 # Copy files from this repo
-cp poll-jira.sh ~/Documents/Prevoir/Scripts/
+cp poll-jira.sh ~/Documents/Prx/Scripts/
 ```
 
 **Windows (WSL terminal):**
 ```bash
-mkdir -p ~/prevoir-scripts
-cp /mnt/c/path/to/poll-jira.sh ~/prevoir-scripts/
+mkdir -p ~/prx-scripts
+cp /mnt/c/path/to/poll-jira.sh ~/prx-scripts/
 ```
 
 ---
@@ -673,22 +673,22 @@ Create a file named `.jira-credentials` in the same folder as `poll-jira.sh`. Re
 
 **macOS / Linux:**
 ```bash
-cat > ~/Documents/Prevoir/Scripts/.jira-credentials << 'EOF'
+cat > ~/Documents/Prx/Scripts/.jira-credentials << 'EOF'
 JIRA_USER="firstname.lastname@prevoir.mu"
 JIRA_TOKEN="your-api-token-here"
 EOF
 
-chmod 600 ~/Documents/Prevoir/Scripts/.jira-credentials
+chmod 600 ~/Documents/Prx/Scripts/.jira-credentials
 ```
 
 **Windows (WSL terminal):**
 ```bash
-cat > ~/prevoir-scripts/.jira-credentials << 'EOF'
+cat > ~/prx-scripts/.jira-credentials << 'EOF'
 JIRA_USER="firstname.lastname@prevoir.mu"
 JIRA_TOKEN="your-api-token-here"
 EOF
 
-chmod 600 ~/prevoir-scripts/.jira-credentials
+chmod 600 ~/prx-scripts/.jira-credentials
 ```
 
 The file should look like this (dummy values shown):
@@ -706,8 +706,8 @@ JIRA_TOKEN="ATATT3xFfGF0tNH4BP5CQ3NHz8YraPNlH1pj1QzcsBNq4ZcG_XXXXXXXXXXXXXXXX"
 
 **macOS / Linux / WSL:**
 ```bash
-chmod +x ~/Documents/Prevoir/Scripts/poll-jira.sh      # macOS / Linux
-chmod +x ~/prevoir-scripts/poll-jira.sh                # WSL
+chmod +x ~/Documents/Prx/Scripts/poll-jira.sh      # macOS / Linux
+chmod +x ~/prx-scripts/poll-jira.sh                # WSL
 ```
 
 ---
@@ -718,19 +718,19 @@ Run the script once to confirm it connects to Jira and processes tickets correct
 
 **macOS / Linux:**
 ```bash
-bash ~/Documents/Prevoir/Scripts/poll-jira.sh
+bash ~/Documents/Prx/Scripts/poll-jira.sh
 ```
 
 **Windows (WSL):**
 ```bash
-bash ~/prevoir-scripts/poll-jira.sh
+bash ~/prx-scripts/poll-jira.sh
 ```
 
 Then check the log:
 
 ```bash
-tail -20 ~/Documents/Prevoir/Scripts/poll-jira.log     # macOS / Linux
-tail -20 ~/prevoir-scripts/poll-jira.log               # WSL
+tail -20 ~/Documents/Prx/Scripts/poll-jira.log     # macOS / Linux
+tail -20 ~/prx-scripts/poll-jira.log               # WSL
 ```
 
 Expected output for a successful run with no new tickets:
@@ -767,13 +767,13 @@ Common errors:
 
 ```bash
 # Copy the plist
-cp com.prevoir.poll-jira.plist ~/Library/LaunchAgents/
+cp com.prx.poll-jira.plist ~/Library/LaunchAgents/
 
 # Register (starts immediately and persists across reboots)
-launchctl load ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+launchctl load ~/Library/LaunchAgents/com.prx.poll-jira.plist
 
 # Verify
-launchctl list | grep com.prevoir.poll-jira
+launchctl list | grep com.prx.poll-jira
 ```
 
 Enable **Power Nap** so the job can fire while the lid is closed on mains power:
@@ -788,7 +788,7 @@ crontab -e
 Add this line (runs every 60 minutes):
 
 ```
-0 * * * * DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus /bin/bash $HOME/Documents/Prevoir/Scripts/poll-jira.sh
+0 * * * * DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus /bin/bash $HOME/Documents/Prx/Scripts/poll-jira.sh
 ```
 
 Verify the cron entry was saved:
@@ -800,11 +800,11 @@ crontab -l
 #### Windows — Task Scheduler
 
 1. Open **Task Scheduler** → **Create Basic Task**
-2. **Name:** `Prevoir Poll Jira`
+2. **Name:** `Prx Poll Jira`
 3. **Trigger:** Daily → check **Repeat task every 1 hour**
 4. **Action:** Start a program
    - **Program:** `wsl`
-   - **Arguments:** `bash /home/<your-wsl-username>/prevoir-scripts/poll-jira.sh`
+   - **Arguments:** `bash /home/<your-wsl-username>/prx-scripts/poll-jira.sh`
 5. On the **General** tab: select **"Run only when user is logged on"**
 6. Click **Finish**
 
@@ -817,8 +817,8 @@ Verify by right-clicking the task → **Run** and checking the log file in WSL.
 Once scheduled, confirm the job fires correctly by checking the log after the first scheduled run:
 
 ```bash
-tail -f ~/Documents/Prevoir/Scripts/poll-jira.log      # macOS / Linux (live tail)
-tail -f ~/prevoir-scripts/poll-jira.log                # WSL
+tail -f ~/Documents/Prx/Scripts/poll-jira.log      # macOS / Linux (live tail)
+tail -f ~/prx-scripts/poll-jira.log                # WSL
 ```
 
 ---
@@ -911,11 +911,11 @@ The knowledge base is created automatically the first time the skill runs — no
 
 #### Local mode (default — no setup needed)
 
-The KB is stored at `$HOME/Documents/Prevoir/KnowledgeBase/` with no git sync and no encryption. This is the default if `PREVOIR_KB_MODE` is not set.
+The KB is stored at `$HOME/Documents/Prx/KnowledgeBase/` with no git sync and no encryption. This is the default if `PRX_KB_MODE` is not set.
 
 ```bash
 # Optional: override the local KB path
-export PREVOIR_KNOWLEDGE_DIR="/your/custom/kb/path"
+export PRX_KNOWLEDGE_DIR="/your/custom/kb/path"
 ```
 
 #### Distributed mode (team sharing via your own private repository)
@@ -924,14 +924,14 @@ To share the KB across your team, you need a **dedicated private git repository*
 
 **Step 1 — Create a new empty private repository on your git server.**
 
-For example, on Bitbucket: create a new private repo called `prevoir-kb` in your company's workspace.
+For example, on Bitbucket: create a new private repo called `prx-kb` in your company's workspace.
 
 **Step 2 — Set environment variables in your shell profile** (`~/.zshrc` or `~/.bash_profile`):
 
 ```bash
-export PREVOIR_KB_MODE=distributed
-export PREVOIR_KB_REPO="git@bitbucket.org:mycompany/prevoir-kb.git"   # your private KB repo URL
-export PREVOIR_KB_LOCAL_CLONE="$HOME/.prevoir/kb"                      # optional: default is $HOME/.prevoir/kb
+export PRX_KB_MODE=distributed
+export PRX_KB_REPO="git@bitbucket.org:mycompany/prx-kb.git"   # your private KB repo URL
+export PRX_KB_LOCAL_CLONE="$HOME/.prx/kb"                      # optional: default is $HOME/.prx/kb
 ```
 
 **Step 3 — Reload your shell:**
@@ -948,14 +948,14 @@ The skill clones the repo automatically on the first session. No manual `git clo
 If you want encrypted files at rest — for example, company policy requires it or you want protection if the repo is ever accidentally made public — also set:
 
 ```bash
-export PREVOIR_KB_KEY="your-strong-secret-passphrase"
+export PRX_KB_KEY="your-strong-secret-passphrase"
 ```
 
-> **Important:** Never commit `PREVOIR_KB_KEY` to any file tracked by git. Share it with team members through a secure channel (1Password, company secrets manager, etc.).
+> **Important:** Never commit `PRX_KB_KEY` to any file tracked by git. Share it with team members through a secure channel (1Password, company secrets manager, etc.).
 
-With `PREVOIR_KB_KEY` set, all KB files are AES-256-CBC encrypted before each push and decrypted to a session temp directory at the start of each session. Without it, plain Markdown is pushed directly — which is fine when the private repo's access controls are sufficient.
+With `PRX_KB_KEY` set, all KB files are AES-256-CBC encrypted before each push and decrypted to a session temp directory at the start of each session. Without it, plain Markdown is pushed directly — which is fine when the private repo's access controls are sufficient.
 
-> **If `PREVOIR_KB_REPO` is not set in distributed mode:** The skill warns you and continues without prior knowledge. No KB reads or writes are performed until the variable is set.
+> **If `PRX_KB_REPO` is not set in distributed mode:** The skill warns you and continues without prior knowledge. No KB reads or writes are performed until the variable is set.
 
 ### PDF Generation (for Step 12 — PDF Report)
 
@@ -990,13 +990,13 @@ If neither pandoc nor Chrome is available, the report is saved as a styled `.htm
 
 **macOS / Linux:**
 ```bash
-git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git \
-  ~/.claude/plugins/marketplaces/prevoir
+git clone https://github.com/dodogeny/prx-skill-internal-dev.git \
+  ~/.claude/plugins/marketplaces/prx
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git "$env:USERPROFILE\.claude\plugins\marketplaces\prevoir"
+git clone https://github.com/dodogeny/prx-skill-internal-dev.git "$env:USERPROFILE\.claude\plugins\marketplaces\prx"
 ```
 
 ### 2. Register the marketplace
@@ -1016,10 +1016,10 @@ Add the following — replacing `<username>` with your username on Windows, or u
 ```json
 {
   "extraKnownMarketplaces": {
-    "prevoir": {
+    "prx": {
       "source": {
         "source": "directory",
-        "path": "/Users/<username>/.claude/plugins/marketplaces/prevoir"
+        "path": "/Users/<username>/.claude/plugins/marketplaces/prx"
       }
     }
   }
@@ -1030,37 +1030,37 @@ Add the following — replacing `<username>` with your username on Windows, or u
 ```json
 {
   "extraKnownMarketplaces": {
-    "prevoir": {
+    "prx": {
       "source": {
         "source": "directory",
-        "path": "C:\\Users\\<username>\\.claude\\plugins\\marketplaces\\prevoir"
+        "path": "C:\\Users\\<username>\\.claude\\plugins\\marketplaces\\prx"
       }
     }
   }
 }
 ```
 
-> If `extraKnownMarketplaces` already exists in your settings, add the `"prevoir"` entry inside it.
+> If `extraKnownMarketplaces` already exists in your settings, add the `"prx"` entry inside it.
 
 **Alternatively**, if you prefer to skip the manual clone and point directly to the hosted Git URL:
 ```json
 {
   "extraKnownMarketplaces": {
-    "prevoir": {
+    "prx": {
       "source": {
         "source": "github",
-        "repo": "dodogeny/prevoir-skill-internal-dev"
+        "repo": "dodogeny/prx-skill-internal-dev"
       }
     }
   }
 }
 ```
-> Note: With this option you must also run `claude plugin marketplace update prevoir` before installing, to fetch the marketplace content from GitHub.
+> Note: With this option you must also run `claude plugin marketplace update prx` before installing, to fetch the marketplace content from GitHub.
 
 ### 3. Install the plugin
 
 ```bash
-claude plugin install prevoir@prevoir
+claude plugin install prx@prx
 ```
 
 ### 4. Verify
@@ -1069,7 +1069,7 @@ claude plugin install prevoir@prevoir
 claude plugin list
 ```
 
-You should see `prevoir@prevoir` listed as installed.
+You should see `prx@prx` listed as installed.
 
 ### 5. Upgrading
 
@@ -1081,14 +1081,14 @@ Pull the latest changes into your cloned directory, then update the plugin:
 
 **macOS / Linux:**
 ```bash
-git -C ~/.claude/plugins/marketplaces/prevoir pull
-claude plugin update prevoir@prevoir
+git -C ~/.claude/plugins/marketplaces/prx pull
+claude plugin update prx@prx
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git -C "$env:USERPROFILE\.claude\plugins\marketplaces\prevoir" pull
-claude plugin update prevoir@prevoir
+git -C "$env:USERPROFILE\.claude\plugins\marketplaces\prx" pull
+claude plugin update prx@prx
 ```
 
 #### If you registered with the hosted Git URL
@@ -1096,7 +1096,7 @@ claude plugin update prevoir@prevoir
 Claude Code manages the fetch from GitHub. Just run:
 
 ```bash
-claude plugin update prevoir@prevoir
+claude plugin update prx@prx
 ```
 
 #### Verify the upgrade
@@ -1105,7 +1105,7 @@ claude plugin update prevoir@prevoir
 claude plugin list
 ```
 
-The version number next to `prevoir@prevoir` should reflect the latest release.
+The version number next to `prx@prx` should reflect the latest release.
 
 ---
 
@@ -1116,7 +1116,7 @@ The version number next to `prevoir@prevoir` should reflect the latest release.
 Invoke using any of these forms:
 
 ```
-/prevoir:dev IV-3672
+/prx:dev IV-3672
 ```
 ```
 /dev IV-3672
@@ -1138,7 +1138,7 @@ Claude will immediately begin executing all 12 steps in order, presenting output
 Add the word `review` before or near the ticket key:
 
 ```
-/prevoir:dev review IV-3672
+/prx:dev review IV-3672
 ```
 ```
 /dev review IV-3672
@@ -1155,7 +1155,7 @@ code review IV-3672
 
 Claude will execute 8 review steps and save the findings as `{TICKET_KEY}-review.pdf` in the configured report folder.
 
-> `/dev` is the shorthand — it uses just the skill name. `/prevoir:dev` is the fully qualified form that includes the plugin namespace. Both work; use the fully qualified form if another installed plugin also has a skill named `dev`.
+> `/dev` is the shorthand — it uses just the skill name. `/prx:dev` is the fully qualified form that includes the plugin namespace. Both work; use the fully qualified form if another installed plugin also has a skill named `dev`.
 
 ### Example output structure
 
@@ -1390,11 +1390,11 @@ The full 12-step analysis still runs and the PDF report is saved to disk. The de
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `poll-jira.sh` | `~/Documents/Prevoir/Scripts/` | Main polling script |
-| `.jira-credentials` | `~/Documents/Prevoir/Scripts/` | API credentials (chmod 600 — owner only) |
-| `.jira-seen-tickets` | `~/Documents/Prevoir/Scripts/` | Cache of already-processed ticket keys |
-| `poll-jira.log` | `~/Documents/Prevoir/Scripts/` | Full run log with timestamps |
-| `com.prevoir.poll-jira.plist` | `~/Library/LaunchAgents/` | macOS launchd job — fires every 60 minutes, Power Nap compatible |
+| `poll-jira.sh` | `~/Documents/Prx/Scripts/` | Main polling script |
+| `.jira-credentials` | `~/Documents/Prx/Scripts/` | API credentials (chmod 600 — owner only) |
+| `.jira-seen-tickets` | `~/Documents/Prx/Scripts/` | Cache of already-processed ticket keys |
+| `poll-jira.log` | `~/Documents/Prx/Scripts/` | Full run log with timestamps |
+| `com.prx.poll-jira.plist` | `~/Library/LaunchAgents/` | macOS launchd job — fires every 60 minutes, Power Nap compatible |
 
 ### Platform support
 
@@ -1415,7 +1415,7 @@ The scripts are already installed and the launchd job is registered. No further 
 Verify the job is loaded:
 
 ```bash
-launchctl list | grep com.prevoir.poll-jira
+launchctl list | grep com.prx.poll-jira
 ```
 
 Enable **Power Nap** so the job can fire while the lid is closed on mains power:
@@ -1426,10 +1426,10 @@ Manage the schedule:
 
 ```bash
 # Disable
-launchctl unload ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+launchctl unload ~/Library/LaunchAgents/com.prx.poll-jira.plist
 
 # Re-enable
-launchctl load ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+launchctl load ~/Library/LaunchAgents/com.prx.poll-jira.plist
 ```
 
 ---
@@ -1439,11 +1439,11 @@ launchctl load ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
 #### 1. Copy the script and credentials
 
 ```bash
-mkdir -p ~/prevoir-scripts
-cp poll-jira.sh ~/prevoir-scripts/
-cp .jira-credentials ~/prevoir-scripts/
-chmod 600 ~/prevoir-scripts/.jira-credentials
-chmod +x ~/prevoir-scripts/poll-jira.sh
+mkdir -p ~/prx-scripts
+cp poll-jira.sh ~/prx-scripts/
+cp .jira-credentials ~/prx-scripts/
+chmod 600 ~/prx-scripts/.jira-credentials
+chmod +x ~/prx-scripts/poll-jira.sh
 ```
 
 #### 2. Install notification support (if not already present)
@@ -1467,12 +1467,12 @@ crontab -e
 Add this line to run every 60 minutes:
 
 ```
-0 * * * * /bin/bash $HOME/prevoir-scripts/poll-jira.sh
+0 * * * * /bin/bash $HOME/prx-scripts/poll-jira.sh
 ```
 
 > **Note:** cron jobs do not inherit your desktop session, so `notify-send` may not display if `DBUS_SESSION_BUS_ADDRESS` is not set. To fix this, add the following at the top of the cron entry:
 > ```
-> 0 * * * * DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus /bin/bash $HOME/prevoir-scripts/poll-jira.sh
+> 0 * * * * DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus /bin/bash $HOME/prx-scripts/poll-jira.sh
 > ```
 
 ---
@@ -1496,11 +1496,11 @@ Restart when prompted. Ubuntu is installed by default.
 From inside a WSL terminal:
 
 ```bash
-mkdir -p ~/prevoir-scripts
-cp /mnt/c/path/to/poll-jira.sh ~/prevoir-scripts/
-cp /mnt/c/path/to/.jira-credentials ~/prevoir-scripts/
-chmod 600 ~/prevoir-scripts/.jira-credentials
-chmod +x ~/prevoir-scripts/poll-jira.sh
+mkdir -p ~/prx-scripts
+cp /mnt/c/path/to/poll-jira.sh ~/prx-scripts/
+cp /mnt/c/path/to/.jira-credentials ~/prx-scripts/
+chmod 600 ~/prx-scripts/.jira-credentials
+chmod +x ~/prx-scripts/poll-jira.sh
 ```
 
 #### 3. Install dependencies inside WSL
@@ -1512,11 +1512,11 @@ sudo apt update && sudo apt install curl python3
 #### 4. Schedule with Windows Task Scheduler
 
 1. Open **Task Scheduler** → **Create Basic Task**
-2. Name: `Prevoir Poll Jira`
+2. Name: `Prx Poll Jira`
 3. Trigger: **Daily**, repeat every **1 hour**
 4. Action: **Start a program**
    - Program: `wsl`
-   - Arguments: `bash /home/<your-wsl-username>/prevoir-scripts/poll-jira.sh`
+   - Arguments: `bash /home/<your-wsl-username>/prx-scripts/poll-jira.sh`
 5. Finish
 
 > Ensure the task is set to **"Run only when user is logged on"** so WSL and PowerShell notifications work correctly.
@@ -1526,8 +1526,8 @@ sudo apt update && sudo apt install curl python3
 ### Running manually (all platforms)
 
 ```bash
-bash ~/Documents/Prevoir/Scripts/poll-jira.sh        # macOS
-bash ~/prevoir-scripts/poll-jira.sh                  # Linux / WSL
+bash ~/Documents/Prx/Scripts/poll-jira.sh        # macOS
+bash ~/prx-scripts/poll-jira.sh                  # Linux / WSL
 ```
 
 ### Resetting the seen-tickets cache
@@ -1535,8 +1535,8 @@ bash ~/prevoir-scripts/poll-jira.sh                  # Linux / WSL
 If you want the script to re-analyse tickets it has already processed, clear the cache:
 
 ```bash
-> ~/Documents/Prevoir/Scripts/.jira-seen-tickets       # macOS
-> ~/prevoir-scripts/.jira-seen-tickets                 # Linux / WSL
+> ~/Documents/Prx/Scripts/.jira-seen-tickets       # macOS
+> ~/prx-scripts/.jira-seen-tickets                 # Linux / WSL
 ```
 
 ---
@@ -1556,7 +1556,7 @@ If you want the script to re-analyse tickets it has already processed, clear the
 │           └── SKILL.md              # The skill definition — all 11 steps
 ├── scripts/
 │   ├── poll-jira.sh                  # Jira polling script (macOS / Linux / Windows WSL)
-│   ├── com.prevoir.poll-jira.plist   # macOS launchd schedule template
+│   ├── com.prx.poll-jira.plist   # macOS launchd schedule template
 │   └── .jira-credentials.example    # Credentials template (safe to commit — dummy values)
 ├── .mcp.json                             # Jira MCP server config (gitignored — contains your API token)
 ├── .mcp.json.example                     # Template for .mcp.json — copy and fill in your credentials
@@ -1584,10 +1584,10 @@ Edit `plugin/skills/dev/SKILL.md`, commit, and push to GitHub.
 
 #### Option A — Claude plugin update command (recommended)
 
-Claude Code manages the marketplace directory internally. Always use the Claude-managed command to update — do **not** run `git pull` directly inside `~/.claude/plugins/marketplaces/prevoir` as Claude Code may wipe the folder when it detects external changes.
+Claude Code manages the marketplace directory internally. Always use the Claude-managed command to update — do **not** run `git pull` directly inside `~/.claude/plugins/marketplaces/prx` as Claude Code may wipe the folder when it detects external changes.
 
 ```bash
-claude plugin update prevoir@prevoir
+claude plugin update prx@prx
 ```
 
 #### Option B — Reinstall (if Option A fails)
@@ -1596,14 +1596,14 @@ If the update command fails or the plugin appears broken:
 
 **macOS / Linux:**
 ```bash
-claude plugin uninstall prevoir@prevoir
-claude plugin install prevoir@prevoir
+claude plugin uninstall prx@prx
+claude plugin install prx@prx
 ```
 
 **Windows (PowerShell):**
 ```powershell
-claude plugin uninstall prevoir@prevoir
-claude plugin install prevoir@prevoir
+claude plugin uninstall prx@prx
+claude plugin install prx@prx
 ```
 
 #### Verify the update
@@ -1612,7 +1612,7 @@ claude plugin install prevoir@prevoir
 claude plugin list
 ```
 
-The version number next to `prevoir@prevoir` should reflect the latest release.
+The version number next to `prx@prx` should reflect the latest release.
 
 ---
 
@@ -1640,7 +1640,7 @@ The skill is purpose-built for the V1 codebase:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/dodogeny/prevoir-skill-internal-dev.git
+git clone https://github.com/dodogeny/prx-skill-internal-dev.git
 ```
 
 ### 2. Open in your IDE
@@ -1691,10 +1691,10 @@ git push origin main
 After pushing, notify the team to run:
 
 ```bash
-claude plugin update prevoir@prevoir
+claude plugin update prx@prx
 ```
 
-> Do **not** advise running `git pull` directly inside `~/.claude/plugins/marketplaces/prevoir` — Claude Code manages that directory and may wipe it if it detects external git changes.
+> Do **not** advise running `git pull` directly inside `~/.claude/plugins/marketplaces/prx` — Claude Code manages that directory and may wipe it if it detects external git changes.
 
 ---
 
@@ -1706,10 +1706,10 @@ claude plugin update prevoir@prevoir
 
 | # | Area | Change |
 |---|------|--------|
-| 1 | KB — Dual storage modes | **`KB_MODE=local` (default):** KB lives in `$HOME/Documents/Prevoir/KnowledgeBase/` — private to one machine, no git, no encryption, zero setup. **`KB_MODE=distributed`:** KB lives in a dedicated private git repository (`PREVOIR_KB_REPO`) that the team owns and controls. Each developer clones the repo locally; the skill pulls at session start and pushes at session end. Access is governed entirely by the private repo's permissions. |
-| 2 | KB — Private dedicated repository | **No data in any public repo.** In distributed mode the KB is pushed to a separate standalone git repository (`PREVOIR_KB_REPO`) distinct from both the product repo and the skill repo. The team can use any private git hosting: company Bitbucket, GitHub Enterprise, GitLab, etc. This gives full access control — grant or revoke per developer independently. |
+| 1 | KB — Dual storage modes | **`KB_MODE=local` (default):** KB lives in `$HOME/Documents/Prx/KnowledgeBase/` — private to one machine, no git, no encryption, zero setup. **`KB_MODE=distributed`:** KB lives in a dedicated private git repository (`PRX_KB_REPO`) that the team owns and controls. Each developer clones the repo locally; the skill pulls at session start and pushes at session end. Access is governed entirely by the private repo's permissions. |
+| 2 | KB — Private dedicated repository | **No data in any public repo.** In distributed mode the KB is pushed to a separate standalone git repository (`PRX_KB_REPO`) distinct from both the product repo and the skill repo. The team can use any private git hosting: company Bitbucket, GitHub Enterprise, GitLab, etc. This gives full access control — grant or revoke per developer independently. |
 | 3 | KB — Git distribution (Steps 0a / R0a) | **Auto-pull at session start** — `git pull origin main` on the local KB repo clone. **Auto-push at session end** (Steps 13f / R9f) — `git add . && git commit && git push origin main` on the same clone. No worktrees, no orphan branches — standard git on a dedicated repo. |
-| 4 | KB — Optional AES-256-CBC encryption | **`PREVOIR_KB_KEY` (optional):** When set, all KB files are encrypted with AES-256-CBC + PBKDF2-SHA512 (310,000 iterations) before each push and decrypted to a session temp directory at session start. This provides defense-in-depth — useful if company policy requires data encrypted at rest or if there is any risk of the private repo being made public. When not set, plain Markdown is pushed directly (appropriate for well-controlled private repos). |
+| 4 | KB — Optional AES-256-CBC encryption | **`PRX_KB_KEY` (optional):** When set, all KB files are encrypted with AES-256-CBC + PBKDF2-SHA512 (310,000 iterations) before each push and decrypted to a session temp directory at session start. This provides defense-in-depth — useful if company policy requires data encrypted at rest or if there is any risk of the private repo being made public. When not set, plain Markdown is pushed directly (appropriate for well-controlled private repos). |
 | 5 | KB — Memory Palace (PALACE.md) | **New primary retrieval layer using Method of Loci.** The V1 system is divided into 6 named Rooms (🏠 CASE ROOM, 🚨 ALERT ROOM, 🖥️ FRONT ROOM, 🔧 ENGINE ROOM, ⚙️ WORKER ROOM, 🗄️ VAULT) matching the system layers. Each knowledge entry has a **vivid trigger phrase** (5–8 words, memorable). Agents read PALACE.md first, scan trigger tables for matched rooms, and surface all relevant knowledge in ≤ 3 read operations — regardless of KB size. Triggers are added to PALACE.md in Steps 13d / R9d and frequency counters are bumped on pattern recurrence. |
 | 6 | KB — INDEX.md (fallback layer) | `INDEX.md` gains a `Trigger` column matching PALACE.md. Used as fallback if Palace yields no matches. Greppable by component, label, ticket key, and trigger phrase. |
 | 7 | KB — Retrieval (Steps 0b / R0b) | **Two-layer retrieval**: (1) Palace — read PALACE.md, map ticket to rooms by component/label, scan room trigger tables; (2) INDEX fallback — grep INDEX.md by component/label. Max 5 ticket entries (most recent). All matching shared entries always included. Prior Knowledge block shown to the full engineering team before investigation begins. |
@@ -1834,7 +1834,7 @@ claude plugin update prevoir@prevoir
 | 16 | Skill — Headless Mode (`AUTO_MODE=true`) | All interactive gates bypass with safe defaults — branch creation and file edits are skipped; full analysis and PDF report still run |
 | 17 | Headless — Morgan phases | All Morgan phases (briefing, mid-check, cross-examination, debate, verdict, fix review) run automatically with no developer input; rework loop runs once if Morgan returns REWORK REQUIRED |
 | 18 | Automation — `poll-jira.sh` | New cross-platform polling script — queries Jira every 60 minutes for tickets assigned to you with status To Do, Open, Parked, or Blocked; detects OS at runtime and uses `osascript` (macOS), `notify-send` (Linux), or PowerShell balloon tip (Windows WSL) |
-| 19 | Automation — `com.prevoir.poll-jira.plist` | macOS launchd job — fires every 60 minutes via `StartInterval`; Power Nap compatible when plugged in; logs stdout and stderr to separate files |
+| 19 | Automation — `com.prx.poll-jira.plist` | macOS launchd job — fires every 60 minutes via `StartInterval`; Power Nap compatible when plugged in; logs stdout and stderr to separate files |
 | 20 | Automation — `.jira-credentials` | Credentials file (chmod 600, gitignored) — keeps Jira API token and email out of the script body |
 | 21 | README — Automated Polling section | New section documenting headless mode, polling script, file locations, cross-platform setup, and cache management |
 
@@ -1900,4 +1900,4 @@ claude plugin update prevoir@prevoir
 
 ## License
 
-Internal use only — Prevoir.
+Internal use only — Prx.

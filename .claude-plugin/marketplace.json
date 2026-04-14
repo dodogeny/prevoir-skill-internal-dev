@@ -1,18 +1,18 @@
 {
-  "name": "prevoir",
+  "name": "prx",
   "owner": {
-    "name": "Prevoir"
+    "name": "Prx"
   },
   "metadata": {
-    "description": "Internal Prevoir developer toolkit for V1 development workflow",
+    "description": "Internal Prx developer toolkit for V1 development workflow",
     "homepage": ""
   },
   "plugins": [
     {
-      "name": "prevoir",
+      "name": "prx",
       "version": "1.2.1",
       "source": "./plugin",
-      "description": "Internal Prevoir developer toolkit for V1 development workflow"
+      "description": "Internal Prx developer toolkit for V1 development workflow"
     }
   ]
 }

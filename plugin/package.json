@@ -1,8 +1,8 @@
 {
-  "name": "prevoir-plugin",
+  "name": "prx-plugin",
   "version": "1.2.1",
   "private": true,
-  "description": "Internal Prevoir developer toolkit for V1 development workflow",
+  "description": "Internal Prx developer toolkit for V1 development workflow",
   "type": "module",
   "dependencies": {},
   "engines": {

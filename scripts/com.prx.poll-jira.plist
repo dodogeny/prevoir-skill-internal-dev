@@ -7,18 +7,18 @@
   SETUP:
   1. Replace /Users/YOUR_USERNAME below with your actual home directory path
   2. Copy this file to ~/Library/LaunchAgents/
-  3. Run: launchctl load ~/Library/LaunchAgents/com.prevoir.poll-jira.plist
+  3. Run: launchctl load ~/Library/LaunchAgents/com.prx.poll-jira.plist
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.prevoir.poll-jira</string>
+    <string>com.prx.poll-jira</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <!-- UPDATE: replace /Users/YOUR_USERNAME with your actual home path -->
-        <string>/Users/YOUR_USERNAME/Documents/Prevoir/Scripts/poll-jira.sh</string>
+        <string>/Users/YOUR_USERNAME/Documents/Prx/Scripts/poll-jira.sh</string>
     </array>
 
     <!-- Run at the top of every hour; more reliable than StartInterval after sleep -->
@@ -30,9 +30,9 @@
 
     <!-- UPDATE: replace /Users/YOUR_USERNAME with your actual home path -->
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/Documents/Prevoir/Scripts/poll-jira.log</string>
+    <string>/Users/YOUR_USERNAME/Documents/Prx/Scripts/poll-jira.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/Documents/Prevoir/Scripts/poll-jira-error.log</string>
+    <string>/Users/YOUR_USERNAME/Documents/Prx/Scripts/poll-jira-error.log</string>
 
     <key>RunAtLoad</key>
     <true/>

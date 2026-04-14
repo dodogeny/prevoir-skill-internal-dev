@@ -1,9 +1,9 @@
 {
-  "name": "prevoir",
-  "description": "Internal Prevoir developer toolkit for V1 development workflow",
+  "name": "prx",
+  "description": "Internal Prx developer toolkit for V1 development workflow",
   "version": "1.2.1",
   "author": {
-    "name": "Prevoir",
+    "name": "Prx",
     "email": "dev@prevoir.mu"
   }
 }

@@ -1,10 +1,10 @@
 ---
 name: dev
-description: Prevoir internal developer workflow skill. Supports two modes — (1) Dev mode: use when a developer provides a Jira ticket URL or ticket key (e.g. IV-1234) and wants to start development work; handles the full workflow from reading the Jira ticket to proposing a code fix. (2) PR Review mode: use when a developer wants to review code changes for a Jira ticket; analyses the ticket context plus all code changes on the associated feature branch, then outputs findings and recommendations as a PDF report.
+description: Prx internal developer workflow skill. Supports two modes — (1) Dev mode: use when a developer provides a Jira ticket URL or ticket key (e.g. IV-1234) and wants to start development work; handles the full workflow from reading the Jira ticket to proposing a code fix. (2) PR Review mode: use when a developer wants to review code changes for a Jira ticket; analyses the ticket context plus all code changes on the associated feature branch, then outputs findings and recommendations as a PDF report.
 version: 1.2.1
 ---
 
-# Prevoir Dev Workflow Skill
+# Prx Dev Workflow Skill
 
 Full end-to-end developer onboarding workflow for V1 Jira tickets. Guides Claude through reading, understanding, branching, locating, and fixing a reported issue or enhancement.
 
@@ -15,21 +15,21 @@ Before executing any step, resolve the following variables by running `echo $HOM
 ```
 REPO_DIR       = $HOME/git/insight
 
-KB_MODE        = ${PREVOIR_KB_MODE:-local}
-                 ┌─ local        → KNOWLEDGE_DIR = ${PREVOIR_KNOWLEDGE_DIR:-$HOME/Documents/Prevoir/KnowledgeBase}
-                 └─ distributed  → KNOWLEDGE_DIR = ${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}
+KB_MODE        = ${PRX_KB_MODE:-local}
+                 ┌─ local        → KNOWLEDGE_DIR = ${PRX_KNOWLEDGE_DIR:-$HOME/Documents/Prx/KnowledgeBase}
+                 └─ distributed  → KNOWLEDGE_DIR = ${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}
 
-PREVOIR_KB_REPO        = (required when KB_MODE=distributed — URL of the team's dedicated private KB repository)
-                          e.g.  git@bitbucket.org:mycompany/prevoir-kb.git
-                                https://github.com/mycompany/prevoir-kb.git
-PREVOIR_KB_LOCAL_CLONE = (optional — local clone path for the KB repo; default: $HOME/.prevoir/kb)
-PREVOIR_KB_KEY         = (optional when KB_MODE=distributed — AES-256-CBC passphrase for defense-in-depth
+PRX_KB_REPO        = (required when KB_MODE=distributed — URL of the team's dedicated private KB repository)
+                          e.g.  git@bitbucket.org:mycompany/prx-kb.git
+                                https://github.com/mycompany/prx-kb.git
+PRX_KB_LOCAL_CLONE = (optional — local clone path for the KB repo; default: $HOME/.prx/kb)
+PRX_KB_KEY         = (optional when KB_MODE=distributed — AES-256-CBC passphrase for defense-in-depth
                           encryption; omit to push plain Markdown to the private repo)
 ```
 
 **`KB_MODE=local` (default):** KB lives in the developer's home directory. No git sync. No encryption. Private to one machine.
 
-**`KB_MODE=distributed`:** KB lives in a dedicated **private** git repository owned and controlled by the team (`PREVOIR_KB_REPO`). The repo is cloned locally at `PREVOIR_KB_LOCAL_CLONE`. KB access is governed by the repo's own permissions — a company Bitbucket, GitHub Enterprise, or GitLab instance ensures only authorised team members can read or write the knowledge base. No sensitive data is ever pushed to any public repository. If `PREVOIR_KB_KEY` is also set, all files are AES-256-CBC encrypted before each push, adding a defense-in-depth layer. If `PREVOIR_KB_KEY` is not set, plain Markdown is pushed directly — acceptable when the repo's access controls are sufficient.
+**`KB_MODE=distributed`:** KB lives in a dedicated **private** git repository owned and controlled by the team (`PRX_KB_REPO`). The repo is cloned locally at `PRX_KB_LOCAL_CLONE`. KB access is governed by the repo's own permissions — a company Bitbucket, GitHub Enterprise, or GitLab instance ensures only authorised team members can read or write the knowledge base. No sensitive data is ever pushed to any public repository. If `PRX_KB_KEY` is also set, all files are AES-256-CBC encrypted before each push, adding a defense-in-depth layer. If `PRX_KB_KEY` is not set, plain Markdown is pushed directly — acceptable when the repo's access controls are sufficient.
 
 Use `REPO_DIR` wherever the V1 repository path is referenced.
 Use `KNOWLEDGE_DIR` wherever the knowledge base path is referenced.
@@ -45,14 +45,14 @@ The knowledge base is a shared, persistent store that grows richer after every D
 
 | Mode | KB location on disk | Distribution | Access control | Encryption | Agent read/write path |
 |------|--------------------|--------------|-----------------|-----------|-----------------------|
-| **local** (default) | `KNOWLEDGE_DIR` (`$HOME/Documents/Prevoir/KnowledgeBase/`) | None — one machine only | Local filesystem | None | `KNOWLEDGE_DIR` directly |
-| **distributed** | `KNOWLEDGE_DIR` (local clone of `PREVOIR_KB_REPO`) | Via git push/pull to the team's private KB repository | Private repo permissions (Bitbucket, GitHub Enterprise, GitLab, etc.) | Optional AES-256-CBC (`.md.enc` files) | `KNOWLEDGE_DIR` or `/tmp/prevoir-kb-{PID}/` if encrypted |
+| **local** (default) | `KNOWLEDGE_DIR` (`$HOME/Documents/Prx/KnowledgeBase/`) | None — one machine only | Local filesystem | None | `KNOWLEDGE_DIR` directly |
+| **distributed** | `KNOWLEDGE_DIR` (local clone of `PRX_KB_REPO`) | Via git push/pull to the team's private KB repository | Private repo permissions (Bitbucket, GitHub Enterprise, GitLab, etc.) | Optional AES-256-CBC (`.md.enc` files) | `KNOWLEDGE_DIR` or `/tmp/prx-kb-{PID}/` if encrypted |
 
 **`KB_WORK_DIR`** — the path agents use for all KB reads and writes during a session:
 ```
 KB_WORK_DIR = (KB_MODE=local)                            → {KNOWLEDGE_DIR}
-            = (KB_MODE=distributed, no PREVOIR_KB_KEY)   → {KNOWLEDGE_DIR}
-            = (KB_MODE=distributed, PREVOIR_KB_KEY set)  → /tmp/prevoir-kb-{$$}/   ← decrypted session copy
+            = (KB_MODE=distributed, no PRX_KB_KEY)   → {KNOWLEDGE_DIR}
+            = (KB_MODE=distributed, PRX_KB_KEY set)  → /tmp/prx-kb-{$$}/   ← decrypted session copy
 ```
 
 Resolve `KB_WORK_DIR` in Step 0a and use it consistently for every KB read/write operation thereafter.
@@ -61,20 +61,20 @@ Resolve `KB_WORK_DIR` in Step 0a and use it consistently for every KB read/write
 
 ### Encryption Scheme
 
-_(Applies only when `KB_MODE=distributed` **and** `PREVOIR_KB_KEY` is set. Optional — plain Markdown is fine when the KB repository's access controls are sufficient.)_
+_(Applies only when `KB_MODE=distributed` **and** `PRX_KB_KEY` is set. Optional — plain Markdown is fine when the KB repository's access controls are sufficient.)_
 
 **When to use:** Enable encryption when you want defense-in-depth — for example, if there is any risk the private repo could be accidentally made public, or company policy requires encrypted secrets at rest.
 
 **Algorithm:** AES-256-CBC with PBKDF2-SHA512 key derivation (310,000 iterations, random 16-byte salt per file). Encrypted files are binary blobs — they appear as garbage when opened without the key. File extension on disk: `.md.enc`.
 
-**Key:** `PREVOIR_KB_KEY` environment variable — never committed to git.
+**Key:** `PRX_KB_KEY` environment variable — never committed to git.
 
 **Encrypt a single file:**
 ```bash
 openssl enc -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
   -in  "$KB_WORK_DIR/{file}.md" \
   -out "$KNOWLEDGE_DIR/{file}.md.enc" \
-  -pass env:PREVOIR_KB_KEY
+  -pass env:PRX_KB_KEY
 ```
 
 **Decrypt a single file:**
@@ -82,19 +82,19 @@ openssl enc -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
   -in  "$KNOWLEDGE_DIR/{file}.md.enc" \
   -out "$KB_WORK_DIR/{file}.md" \
-  -pass env:PREVOIR_KB_KEY
+  -pass env:PRX_KB_KEY
 ```
 
 **Batch decrypt (Step 0a — pull to session temp dir):**
 ```bash
-KB_WORK_DIR="/tmp/prevoir-kb-$$"
+KB_WORK_DIR="/tmp/prx-kb-$$"
 mkdir -p "$KB_WORK_DIR/tickets" "$KB_WORK_DIR/shared"
 find "$KNOWLEDGE_DIR" -name "*.md.enc" | while read f; do
   rel="${f#$KNOWLEDGE_DIR/}"           # e.g. tickets/IV-3672.md.enc
-  out="$KB_WORK_DIR/${rel%.enc}"       # e.g. /tmp/prevoir-kb-$$/tickets/IV-3672.md
+  out="$KB_WORK_DIR/${rel%.enc}"       # e.g. /tmp/prx-kb-$$/tickets/IV-3672.md
   mkdir -p "$(dirname "$out")"
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
-    -in "$f" -out "$out" -pass env:PREVOIR_KB_KEY 2>/dev/null || \
+    -in "$f" -out "$out" -pass env:PRX_KB_KEY 2>/dev/null || \
     echo "KB_DECRYPT_WARN: ${rel} — skipping (wrong key or corrupted)"
 done
 ```
@@ -106,7 +106,7 @@ find "$KB_WORK_DIR" -name "*.md" | while read f; do
   out="$KNOWLEDGE_DIR/${rel}.enc"      # e.g. KNOWLEDGE_DIR/tickets/IV-3672.md.enc
   mkdir -p "$(dirname "$out")"
   openssl enc -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
-    -in "$f" -out "$out" -pass env:PREVOIR_KB_KEY
+    -in "$f" -out "$out" -pass env:PRX_KB_KEY
 done
 # Remove stale .md.enc files whose source .md was deleted during the session
 find "$KNOWLEDGE_DIR" -name "*.md.enc" | while read enc; do
@@ -125,14 +125,14 @@ _(Applies to `KB_MODE=distributed`.)_
 | Threat | Mitigation |
 |--------|-----------|
 | Unauthorised access to KB content | **Private repository** — access controlled by the team's git server (Bitbucket, GitHub Enterprise, GitLab). Only team members with repo access can read or push. |
-| Accidental public exposure of the repo | **Optional encryption** — if `PREVOIR_KB_KEY` is set, files are AES-256-CBC encrypted; the repo can be made public and no content is readable without the key. |
+| Accidental public exposure of the repo | **Optional encryption** — if `PRX_KB_KEY` is set, files are AES-256-CBC encrypted; the repo can be made public and no content is readable without the key. |
 | Brute-force key recovery (if encrypted) | PBKDF2-SHA512 at 310,000 iterations per file makes each guess computationally expensive. |
-| Key accidentally committed (if encrypted) | `PREVOIR_KB_KEY` is an env var only; `.md.enc` files contain no key material. |
-| Plaintext KB in session temp dir (if encrypted) | Decrypted files live only in `/tmp/prevoir-kb-{PID}/`; deleted after push (Step 13f/R9f). |
+| Key accidentally committed (if encrypted) | `PRX_KB_KEY` is an env var only; `.md.enc` files contain no key material. |
+| Plaintext KB in session temp dir (if encrypted) | Decrypted files live only in `/tmp/prx-kb-{PID}/`; deleted after push (Step 13f/R9f). |
 
 **Primary security boundary:** the private repository's access control. Encryption is additive.
 
-**Never store `PREVOIR_KB_KEY` in any file tracked by git.** Set it only in the developer's shell profile (`~/.zshrc`, `~/.bash_profile`).
+**Never store `PRX_KB_KEY` in any file tracked by git.** Set it only in the developer's shell profile (`~/.zshrc`, `~/.bash_profile`).
 
 ---
 
@@ -151,7 +151,7 @@ _(Applies to `KB_MODE=distributed`.)_
     └── regression-risks.md (or .md.enc)← known fragile areas requiring care on every change
 ```
 
-In `KB_MODE=local` all files are plain `.md`. In `KB_MODE=distributed` all files on disk are `.md.enc`; the plain `.md` files exist only in `KB_WORK_DIR=/tmp/prevoir-kb-{PID}/` during the session.
+In `KB_MODE=local` all files are plain `.md`. In `KB_MODE=distributed` all files on disk are `.md.enc`; the plain `.md` files exist only in `KB_WORK_DIR=/tmp/prx-kb-{PID}/` during the session.
 
 ---
 
@@ -204,7 +204,7 @@ Each knowledge entry has a **trigger** — a 5–8 word memorable phrase that le
 
 **PALACE.md format:**
 ```markdown
-# Prevoir Memory Palace
+# Prx Memory Palace
 Updated: YYYY-MM-DD | Rooms: 6 | Triggers: N
 
 ## 🏠 CASE ROOM  (CaseManager, FRAMS, Cases)
@@ -260,7 +260,7 @@ Note: A trigger may appear in multiple rooms if the knowledge spans components (
 `INDEX.md` is the fallback lookup layer and the authoritative list of all entries. Every entry has exactly one row here.
 
 ```markdown
-# Prevoir Knowledge Base — Master Index
+# Prx Knowledge Base — Master Index
 Updated: YYYY-MM-DD | Ticket entries: N | Shared entries: N
 
 ## Ticket Entries
@@ -517,15 +517,15 @@ The Bitbucket cross-check is **best-effort**: if the repository is not accessibl
 
 _(Applies only when `KB_MODE=distributed`. Skip entirely when `KB_MODE=local` — no git operations are performed on the KB.)_
 
-The distributed knowledge base lives in a **dedicated private git repository** (`PREVOIR_KB_REPO`) owned and controlled by the team. It is cloned locally at `KNOWLEDGE_DIR`. Because it is a standalone repository — not a branch on the product repo — git operations are straightforward: clone once, pull at session start, push at session end.
+The distributed knowledge base lives in a **dedicated private git repository** (`PRX_KB_REPO`) owned and controlled by the team. It is cloned locally at `KNOWLEDGE_DIR`. Because it is a standalone repository — not a branch on the product repo — git operations are straightforward: clone once, pull at session start, push at session end.
 
 **First-time setup (once — when creating the KB repo for the team):**
 ```bash
-KB_CLONE="${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
 mkdir -p "$KB_CLONE/tickets" "$KB_CLONE/shared"
 cd "$KB_CLONE"
-git init && git remote add origin "$PREVOIR_KB_REPO"
-echo "# Prevoir Knowledge Base" > README.md
+git init && git remote add origin "$PRX_KB_REPO"
+echo "# Prx Knowledge Base" > README.md
 
 # Create .gitattributes — union merge prevents conflicts on append-only KB files
 cat > .gitattributes << 'EOF'
@@ -542,26 +542,26 @@ git push -u origin main
 
 If the repo already exists and a developer is cloning for the first time:
 ```bash
-KB_CLONE="${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}"
-git clone "$PREVOIR_KB_REPO" "$KB_CLONE"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+git clone "$PRX_KB_REPO" "$KB_CLONE"
 ```
 
 **Pull (Step 0a — before session, distributed mode only):**
 ```bash
-KB_CLONE="${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
 if [ -d "$KB_CLONE/.git" ]; then
   cd "$KB_CLONE" && git pull origin main && \
-    echo "KB: pulled latest from ${PREVOIR_KB_REPO}."
+    echo "KB: pulled latest from ${PRX_KB_REPO}."
 else
-  git clone "$PREVOIR_KB_REPO" "$KB_CLONE" && \
-    echo "KB: cloned ${PREVOIR_KB_REPO} → ${KB_CLONE}."
+  git clone "$PRX_KB_REPO" "$KB_CLONE" && \
+    echo "KB: cloned ${PRX_KB_REPO} → ${KB_CLONE}."
   mkdir -p "$KB_CLONE/tickets" "$KB_CLONE/shared"
 fi
 ```
 
 **Push (Steps 13f and R9f — after session, distributed mode only):**
 ```bash
-KB_CLONE="${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
 cd "$KB_CLONE"
 
 # Step 1 — Pull latest from remote before committing (rebase keeps history clean)
@@ -579,7 +579,7 @@ elif git ls-remote --exit-code origin >/dev/null 2>&1; then
   REMOTE_EXISTS=false
   echo "KB: remote repo reachable — main branch does not exist yet, will create."
 else
-  echo "KB_PUSH_WARN: remote '${PREVOIR_KB_REPO}' is not reachable."
+  echo "KB_PUSH_WARN: remote '${PRX_KB_REPO}' is not reachable."
   echo "             Changes committed locally. Push manually: cd ${KB_CLONE} && git push -u origin main"
   exit 0
 fi
@@ -594,10 +594,10 @@ git commit -m "kb({TICKET_KEY}): {type} — {one-line summary}"
 
 # Step 5 — Push (create remote branch if this is the first push)
 if [ "$REMOTE_EXISTS" = true ]; then
-  git push origin main && echo "KB: pushed to ${PREVOIR_KB_REPO}."
+  git push origin main && echo "KB: pushed to ${PRX_KB_REPO}."
 else
   git push --set-upstream origin main && \
-    echo "KB: created and pushed origin/main at ${PREVOIR_KB_REPO}."
+    echo "KB: created and pushed origin/main at ${PRX_KB_REPO}."
 fi
 ```
 
@@ -605,7 +605,7 @@ fi
 
 **Merge conflicts:** If `git pull` produces a conflict (two developers pushed simultaneously), resolve by preferring the most recent content. Prefer keeping both sets of knowledge — append rather than overwrite shared file entries where possible.
 
-**Remote repo does not exist at all** (the URL itself is invalid or the repo was never created): `git ls-remote` will fail with a fatal error. The agent logs `KB_PUSH_WARN: KB repository '${PREVOIR_KB_REPO}' does not exist or is inaccessible. Create the private repo first, then retry.` and skips the push without failing the session.
+**Remote repo does not exist at all** (the URL itself is invalid or the repo was never created): `git ls-remote` will fail with a fatal error. The agent logs `KB_PUSH_WARN: KB repository '${PRX_KB_REPO}' does not exist or is inaccessible. Create the private repo first, then retry.` and skips the push without failing the session.
 
 ## Headless Mode
 
@@ -652,7 +652,7 @@ This skill operates in two modes. Detect the mode from the invocation:
 Invoke when the developer provides:
 - A Jira ticket URL: `https://prevoirsolutions.atlassian.net/browse/IV-XXXX`
 - A Jira ticket key: `IV-XXXX`
-- A phrase like `/prevoir:dev IV-3672` or `/dev IV-3672` or "start dev on IV-3672" or "pick up IV-3672"
+- A phrase like `/prx:dev IV-3672` or `/dev IV-3672` or "start dev on IV-3672" or "pick up IV-3672"
 - A phrase like `review IV-3672` or `PR review IV-3672` or `/dev review IV-3672` for code review
 
 Do NOT invoke for general code questions unrelated to a Jira ticket.
@@ -685,10 +685,10 @@ Set `KB_WORK_DIR="$KNOWLEDGE_DIR"`. No git operations.
 
 ##### If `KB_MODE=distributed`:
 
-**Step 1 — Verify `PREVOIR_KB_REPO` is set:**
+**Step 1 — Verify `PRX_KB_REPO` is set:**
 ```bash
-if [ -z "$PREVOIR_KB_REPO" ]; then
-  echo "KB_ERROR: PREVOIR_KB_REPO is not set."
+if [ -z "$PRX_KB_REPO" ]; then
+  echo "KB_ERROR: PRX_KB_REPO is not set."
   echo "         Set it to your team's private KB repository URL in your shell profile."
   echo "         Continuing without knowledge base."
 fi
@@ -700,35 +700,35 @@ If not set, skip all remaining distributed steps and proceed without prior knowl
 Use the pull command from the **Git Sync Rules** section above. If the local clone does not exist, clone the repo first.
 
 ```bash
-KB_CLONE="${PREVOIR_KB_LOCAL_CLONE:-$HOME/.prevoir/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
 if [ -d "$KB_CLONE/.git" ]; then
   cd "$KB_CLONE" && git pull origin main && \
-    echo "KB: pulled latest from ${PREVOIR_KB_REPO}."
+    echo "KB: pulled latest from ${PRX_KB_REPO}."
 else
-  git clone "$PREVOIR_KB_REPO" "$KB_CLONE" && \
-    echo "KB: cloned ${PREVOIR_KB_REPO} → ${KB_CLONE}."
+  git clone "$PRX_KB_REPO" "$KB_CLONE" && \
+    echo "KB: cloned ${PRX_KB_REPO} → ${KB_CLONE}."
   mkdir -p "$KB_CLONE/tickets" "$KB_CLONE/shared"
 fi
 ```
 
 **Step 3 — Set `KB_WORK_DIR`:**
 
-- If `PREVOIR_KB_KEY` is **not set**: `KB_WORK_DIR="$KNOWLEDGE_DIR"` — operate directly on the local clone (plain Markdown).
-- If `PREVOIR_KB_KEY` **is set** (encryption enabled): clean up any prior session temp dirs, then decrypt:
+- If `PRX_KB_KEY` is **not set**: `KB_WORK_DIR="$KNOWLEDGE_DIR"` — operate directly on the local clone (plain Markdown).
+- If `PRX_KB_KEY` **is set** (encryption enabled): clean up any prior session temp dirs, then decrypt:
 
 ```bash
 # Clean prior temp dirs
-rm -rf /tmp/prevoir-kb-[0-9]* 2>/dev/null
+rm -rf /tmp/prx-kb-[0-9]* 2>/dev/null
 
 # Decrypt to session temp dir
-KB_WORK_DIR="/tmp/prevoir-kb-$$"
+KB_WORK_DIR="/tmp/prx-kb-$$"
 mkdir -p "$KB_WORK_DIR/tickets" "$KB_WORK_DIR/shared"
 find "$KNOWLEDGE_DIR" -name "*.md.enc" | while read f; do
   rel="${f#$KNOWLEDGE_DIR/}"
   out="$KB_WORK_DIR/${rel%.enc}"
   mkdir -p "$(dirname "$out")"
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
-    -in "$f" -out "$out" -pass env:PREVOIR_KB_KEY 2>/dev/null || \
+    -in "$f" -out "$out" -pass env:PRX_KB_KEY 2>/dev/null || \
     echo "KB_DECRYPT_WARN: ${rel} — skipping (wrong key or corrupted)"
 done
 enc_count=$(find "$KNOWLEDGE_DIR" -name "*.md.enc" 2>/dev/null | wc -l | tr -d ' ')
@@ -747,7 +747,7 @@ echo "KB: decrypted ${enc_count} encrypted files → ${KB_WORK_DIR}/"
 
 If `PALACE.md` does not exist, create:
 ```markdown
-# Prevoir Memory Palace
+# Prx Memory Palace
 Updated: {today} | Rooms: 6 | Triggers: 0
 
 ## 🏠 CASE ROOM  (CaseManager, FRAMS, Cases)
@@ -2195,7 +2195,7 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate eve
 | Field | Value |
 |-------|-------|
 | Date | {today's date} |
-| Analyst | Claude (Prevoir Dev Skill v1.2.1) |
+| Analyst | Claude (Prx Dev Skill v1.2.1) |
 | Ticket type | {Bug / Story / Enhancement} |
 | Priority | {priority} |
 | Status | {status} |
@@ -2719,7 +2719,7 @@ For every new or updated knowledge entry produced in 13b–13c:
 
 **If `KB_MODE=distributed`:**
 
-**Step 1 — If encryption is enabled (`PREVOIR_KB_KEY` is set): batch encrypt session files:**
+**Step 1 — If encryption is enabled (`PRX_KB_KEY` is set): batch encrypt session files:**
 
 Use the batch encrypt command from the **Encryption Scheme** section above. All `.md` files in `KB_WORK_DIR` are encrypted to `.md.enc` in `KNOWLEDGE_DIR`. Stale `.md.enc` files with no corresponding source are deleted.
 
@@ -2738,7 +2738,7 @@ echo "KB: session temp dir ${KB_WORK_DIR} deleted."
 On success display (encryption enabled):
 ```
 📚 Knowledge Base Updated & Pushed (encrypted)
-   Repository    : {PREVOIR_KB_REPO}
+   Repository    : {PRX_KB_REPO}
    Location      : {KNOWLEDGE_DIR}/ (.md.enc files)
    Ticket entry  : tickets/{TICKET_KEY}.md.enc — {created / updated}
    Business rules: {N new / N confirmed}
@@ -2755,7 +2755,7 @@ On success display (encryption enabled):
 On success display (no encryption):
 ```
 📚 Knowledge Base Updated & Pushed
-   Repository    : {PREVOIR_KB_REPO}
+   Repository    : {PRX_KB_REPO}
    Location      : {KNOWLEDGE_DIR}/
    Ticket entry  : tickets/{TICKET_KEY}.md — {created / updated}
    Business rules: {N new / N confirmed}
@@ -3305,7 +3305,7 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-review.md`. Populate every
 | Field | Value |
 |-------|-------|
 | Date | {today's date} |
-| Reviewer | Claude Review Panel (Prevoir Dev Skill v1.2.1) |
+| Reviewer | Claude Review Panel (Prx Dev Skill v1.2.1) |
 | Ticket type | {Bug fix / Enhancement} |
 | Priority | {priority} |
 | Status | {status} |
@@ -3570,7 +3570,7 @@ Same as Step 13e — add/update the ticket row, add new shared entries, update c
 
 **If `KB_MODE=distributed`:**
 
-**Step 1 — If encryption is enabled (`PREVOIR_KB_KEY` is set): batch encrypt session files:**
+**Step 1 — If encryption is enabled (`PRX_KB_KEY` is set): batch encrypt session files:**
 
 Use the batch encrypt command from the **Encryption Scheme** section above. If encryption is not enabled, files were written directly to `KNOWLEDGE_DIR` in steps R9b–R9e — skip this step.
 
@@ -3587,7 +3587,7 @@ echo "KB: session temp dir ${KB_WORK_DIR} deleted."
 On success display (encryption enabled):
 ```
 📚 Knowledge Base Updated & Pushed (encrypted)
-   Repository    : {PREVOIR_KB_REPO}
+   Repository    : {PRX_KB_REPO}
    Location      : {KNOWLEDGE_DIR}/ (.md.enc files)
    Ticket entry  : tickets/{TICKET_KEY}.md.enc — {created / updated}
    Verdict       : {✅ / ⚠️ / 🔄 / ❌} recorded
@@ -3605,7 +3605,7 @@ On success display (encryption enabled):
 On success display (no encryption):
 ```
 📚 Knowledge Base Updated & Pushed
-   Repository    : {PREVOIR_KB_REPO}
+   Repository    : {PRX_KB_REPO}
    Location      : {KNOWLEDGE_DIR}/
    Ticket entry  : tickets/{TICKET_KEY}.md — {created / updated}
    Verdict       : {✅ / ⚠️ / 🔄 / ❌} recorded

@@ -1,10 +1,10 @@
 #!/bin/bash
 # poll-jira.sh
 # Polls Jira every hour for To Do/Open/Parked/Blocked tickets assigned to the current user
-# and triggers the Prevoir dev skill analysis for any new ones found.
+# and triggers the Prx dev skill analysis for any new ones found.
 #
 # macOS  — scheduled via launchd (StartInterval 3600)
-#          See: scripts/com.prevoir.poll-jira.plist
+#          See: scripts/com.prx.poll-jira.plist
 # Linux  — scheduled via cron: 0 * * * * /path/to/poll-jira.sh
 # Windows — run via WSL; scheduled via Task Scheduler calling:
 #           wsl bash /path/to/poll-jira.sh
@@ -54,7 +54,7 @@ notify() {
 
 if [ ! -f "$CREDENTIALS_FILE" ]; then
   echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: Credentials file not found at $CREDENTIALS_FILE" >> "$LOG_FILE"
-  notify "Prevoir Dev Skill" "Credentials file missing — poll-jira cannot run."
+  notify "Prx Dev Skill" "Credentials file missing — poll-jira cannot run."
   exit 1
 fi
 
@@ -105,7 +105,7 @@ HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n 1)
 if [ "$HTTP_CODE" != "200" ]; then
   echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: Jira API returned HTTP $HTTP_CODE" >> "$LOG_FILE"
   echo "$HTTP_BODY" >> "$LOG_FILE"
-  notify "Prevoir Dev Skill" "Jira API error (HTTP $HTTP_CODE) — check poll-jira.log"
+  notify "Prx Dev Skill" "Jira API error (HTTP $HTTP_CODE) — check poll-jira.log"
   exit 1
 fi
 
@@ -139,7 +139,7 @@ for TICKET in $TICKETS; do
   echo "$TICKET" >> "$CACHE_FILE"
   NEW_COUNT=$((NEW_COUNT + 1))
 
-  notify "Prevoir Dev Skill" "Starting analysis for $TICKET…"
+  notify "Prx Dev Skill" "Starting analysis for $TICKET…"
 
   # Run the dev skill in headless/analysis-only mode.
   # --dangerously-skip-permissions: allows non-interactive Bash tool calls
@@ -152,7 +152,7 @@ for TICKET in $TICKETS; do
   echo "$(date '+%Y-%m-%d %H:%M:%S') ── Claude output start ──────────────────────" >> "$LOG_FILE"
   AUTO_MODE=true \
     claude --dangerously-skip-permissions \
-           --print "/prevoir:dev $TICKET" \
+           --print "/prx:dev $TICKET" \
            --mcp-config "$MCP_CONFIG_FILE" \
            --output-format stream-json \
            --verbose \
@@ -213,10 +213,10 @@ for raw in sys.stdin:
 
   if [ $EXIT_CODE -eq 0 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') Analysis complete for $TICKET (exit $EXIT_CODE)" >> "$LOG_FILE"
-    notify "Prevoir Dev Skill" "Analysis complete for $TICKET. PDF saved to DevelopmentTasks folder."
+    notify "Prx Dev Skill" "Analysis complete for $TICKET. PDF saved to DevelopmentTasks folder."
   else
     echo "$(date '+%Y-%m-%d %H:%M:%S') Analysis failed for $TICKET (exit $EXIT_CODE)" >> "$LOG_FILE"
-    notify "Prevoir Dev Skill" "Analysis failed for $TICKET (exit $EXIT_CODE) — check poll-jira.log"
+    notify "Prx Dev Skill" "Analysis failed for $TICKET (exit $EXIT_CODE) — check poll-jira.log"
   fi
 
 done
