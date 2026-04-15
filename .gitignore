@@ -34,3 +34,7 @@ scripts/.jira-seen-tickets
 
 # MCP config contains credentials (never commit)
 .mcp.json
+
+# Environment variables file contains credentials (never commit)
+# Copy .env.example → .env and fill in your values
+.env

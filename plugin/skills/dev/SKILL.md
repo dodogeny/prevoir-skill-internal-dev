@@ -25,6 +25,12 @@ PRX_KB_REPO        = (required when KB_MODE=distributed — URL of the team's de
 PRX_KB_LOCAL_CLONE = (optional — local clone path for the KB repo; default: $HOME/.prx/kb)
 PRX_KB_KEY         = (optional when KB_MODE=distributed — AES-256-CBC passphrase for defense-in-depth
                           encryption; omit to push plain Markdown to the private repo)
+
+PRX_EMAIL_TO       = (optional — recipient address; if set, the report is emailed after saving)
+PRX_SMTP_HOST      = (required when PRX_EMAIL_TO is set — SMTP server hostname, e.g. smtp.gmail.com)
+PRX_SMTP_PORT      = (optional — SMTP port; default: 587)
+PRX_SMTP_USER      = (required when PRX_EMAIL_TO is set — SMTP login username)
+PRX_SMTP_PASS      = (required when PRX_EMAIL_TO is set — SMTP password or app password)
 ```
 
 **`KB_MODE=local` (default):** KB lives in the developer's home directory. No git sync. No encryption. Private to one machine.
@@ -2614,9 +2620,42 @@ After saving, display the following to the developer (always show both the folde
    Format : PDF  ← (or "HTML (PDF libraries unavailable)" if Method 3 was used)
 ```
 
-#### 12e. Temp File Cleanup
+#### 12e. Email Report
 
-After the report is confirmed saved, remove the intermediate temp files:
+After the report is confirmed saved, send it by email if `PRX_EMAIL_TO` is set.
+
+Resolve the path to `send-report.py` relative to this skill file. The script lives at `scripts/send-report.py` in the plugin repository root. Determine the repo root by running:
+
+```bash
+# macOS / Linux
+python3 "$(dirname "$(dirname "$(dirname "$0")")")/scripts/send-report.py" \
+  "{TICKET_KEY}" "{REPORT_DIR}/{TICKET_KEY}-analysis.pdf" "PDF"
+
+# Windows (PowerShell) — use the absolute path resolved at Step 0
+python scripts\send-report.py "{TICKET_KEY}" "{REPORT_DIR}\{TICKET_KEY}-analysis.pdf" "PDF"
+```
+
+If the report was saved as HTML (Method 3 fallback), pass `"HTML"` as the third argument and the `.html` path instead.
+
+The script reads all SMTP configuration from environment variables — no arguments needed beyond the three above. It handles its own error reporting:
+
+| Output line | Meaning |
+|-------------|---------|
+| `EMAIL_SKIP: ...` | `PRX_EMAIL_TO` not set — skip silently, no error |
+| `EMAIL_SENT: ...` | Email delivered successfully |
+| `EMAIL_ERROR: ...` | Configuration or connection problem — log the message, do not block the session |
+
+A failed email is **never a blocking error**. Log the `EMAIL_ERROR` line and continue to Step 12f.
+
+After a successful send, append to the confirmation block:
+
+```
+📧 Report emailed to {PRX_EMAIL_TO}
+```
+
+#### 12f. Temp File Cleanup
+
+After the report is confirmed saved and email (if configured) has been attempted, remove the intermediate temp files:
 
 ```bash
 rm -f /tmp/{TICKET_KEY}-analysis.md /tmp/{TICKET_KEY}-analysis.html

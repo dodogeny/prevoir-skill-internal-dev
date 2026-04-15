@@ -274,8 +274,9 @@ The PDF is structured in 11 sections, one per step. Every section is fully popul
   1. **`pandoc`** — best quality, handles tables and code blocks correctly; install via `brew install pandoc` (macOS), `apt install pandoc` (Linux), or the [pandoc installer](https://pandoc.org/installing.html) (Windows)
   2. **Chrome / Chromium headless** — uses `--print-to-pdf`; works on all platforms if Chrome is installed; no additional setup required
   3. **HTML fallback** — saves a styled `.html` file and instructs the developer to print to PDF from their browser
-- **Confirmation** — always displays both the output folder and the full file path after saving
-- **Cleanup** — intermediate temp files (`/tmp/{TICKET_KEY}-analysis.md`, `.html`) are removed after the report is saved
+- **Email delivery** — if `PRX_EMAIL_TO` is set, the report is emailed via SMTP immediately after saving (see [Email Delivery](#email-delivery-step-12e--optional) in Prerequisites)
+- **Confirmation** — always displays both the output folder and the full file path after saving; appends `📧 Report emailed to {address}` when email is configured
+- **Cleanup** — intermediate temp files (`/tmp/{TICKET_KEY}-analysis.md`, `.html`) are removed after the report is saved and email has been attempted
 
 ---
 
@@ -978,6 +979,114 @@ No setup required. The skill detects Chrome automatically on macOS, Linux, and W
 If neither pandoc nor Chrome is available, the report is saved as a styled `.html` file. Open it in any browser and use **File → Print → Save as PDF**.
 
 > Python `weasyprint` is no longer used — it has unreliable native dependencies on Windows.
+
+### Email Delivery (Step 12e — optional)
+
+The skill can email the analysis or review report immediately after it is saved. This requires no extra packages — it uses Python 3's built-in `smtplib` library, which is available on macOS, Linux, and Windows.
+
+Set the following environment variables **once** in your shell profile (see [Wiring env vars into every session](#wiring-env-vars-into-every-session) below for the recommended approach per OS):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PRX_EMAIL_TO` | Yes (to enable) | Recipient email address. If not set, email is silently skipped. |
+| `PRX_SMTP_HOST` | Yes | SMTP server hostname (e.g. `smtp.gmail.com`, `smtp.office365.com`) |
+| `PRX_SMTP_PORT` | No | SMTP port — default `587` (STARTTLS). Use `465` for SSL-only servers. |
+| `PRX_SMTP_USER` | Yes | SMTP login username (usually your email address) |
+| `PRX_SMTP_PASS` | Yes | SMTP password or app password |
+
+> **Gmail users:** Google requires an [App Password](https://myaccount.google.com/apppasswords) when 2-Step Verification is enabled. Generate one under **Google Account → Security → App Passwords** and use it as `PRX_SMTP_PASS`.
+
+> **Office 365 / Outlook users:** Use `smtp.office365.com`, port `587`, and your normal Microsoft 365 credentials (or an app password if MFA is enforced).
+
+A failed email is never a blocking error — the session continues and the report remains saved locally.
+
+#### Wiring env vars into every session
+
+You should not export env vars manually each time. The most effective approach is to add them to your shell profile or Claude Code environment file so they are loaded automatically.
+
+**macOS / Linux — add to shell profile:**
+
+```bash
+# ~/.zshrc  or  ~/.bash_profile  or  ~/.bashrc
+export PRX_EMAIL_TO="recipient@example.com"
+export PRX_SMTP_HOST="smtp.gmail.com"
+export PRX_SMTP_PORT="587"
+export PRX_SMTP_USER="you@gmail.com"
+export PRX_SMTP_PASS="your-app-password"
+```
+
+Then reload:
+```bash
+source ~/.zshrc    # or source ~/.bash_profile
+```
+
+**Windows — set as User Environment Variables (persists across reboots, no terminal needed):**
+
+1. Open **Start → Search → "Edit environment variables for your account"**
+2. Click **New** and add each variable:
+   - `PRX_EMAIL_TO` → `recipient@example.com`
+   - `PRX_SMTP_HOST` → `smtp.gmail.com`
+   - `PRX_SMTP_PORT` → `587`
+   - `PRX_SMTP_USER` → `you@gmail.com`
+   - `PRX_SMTP_PASS` → `your-app-password`
+3. Click **OK** — new terminal sessions and Claude Code will pick these up automatically
+
+> **Windows alternative — PowerShell profile:** Add the same `$env:PRX_EMAIL_TO = "..."` lines to your `$PROFILE` file (`notepad $PROFILE`) so they are set on every PowerShell session.
+
+**Claude Code `.env` file (all platforms — recommended for team setups):**
+
+Claude Code loads a `.env` file from the project root automatically. Add the SMTP variables there to keep them scoped to this project:
+
+```bash
+# .env  (in the prx-skill-internal-dev project root)
+PRX_EMAIL_TO=recipient@example.com
+PRX_SMTP_HOST=smtp.gmail.com
+PRX_SMTP_PORT=587
+PRX_SMTP_USER=you@gmail.com
+PRX_SMTP_PASS=your-app-password
+```
+
+> **Security:** `.env` is already listed in `.gitignore` in this repository — it will never be committed accidentally.
+
+---
+
+## Environment Variables — Quick Reference
+
+All plugin configuration is done via environment variables. The repository ships with a `.env.example` file listing every variable with an explanation. **Copy it to `.env` and fill in your values** — Claude Code loads `.env` from the project root automatically at the start of every session, so you never need to export variables manually.
+
+```bash
+cp .env.example .env
+# then open .env and fill in your values
+```
+
+`.env` is listed in `.gitignore` and will never be committed. Share secrets with teammates via 1Password or your company's secrets manager.
+
+### Complete variable reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| **Jira MCP** | | | |
+| `JIRA_URL` | Yes | — | Your Atlassian base URL, e.g. `https://yourcompany.atlassian.net` |
+| `JIRA_USERNAME` | Yes | — | Your Atlassian account email |
+| `JIRA_API_TOKEN` | Yes | — | Jira API token — generate at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) |
+| **Knowledge Base** | | | |
+| `PRX_KB_MODE` | No | `local` | `local` — KB on this machine only. `distributed` — KB in a shared private git repo. |
+| `PRX_KNOWLEDGE_DIR` | No | `$HOME/Documents/Prx/KnowledgeBase` | Override the local KB path (local mode only) |
+| `PRX_KB_REPO` | Distributed only | — | URL of your team's private KB git repository |
+| `PRX_KB_LOCAL_CLONE` | No | `$HOME/.prx/kb` | Local clone path for the KB repo (distributed mode only) |
+| `PRX_KB_KEY` | No | — | AES-256-CBC passphrase for encrypting KB files at rest (distributed mode, optional) |
+| **Report Output** | | | |
+| `CLAUDE_REPORT_DIR` | No | `$HOME/Documents/DevelopmentTasks/Claude-Analyzed-Tickets` | Folder where PDF/HTML reports are saved |
+| **Email Delivery** | | | |
+| `PRX_EMAIL_TO` | No | — | Recipient address. Leave unset to disable email entirely. |
+| `PRX_SMTP_HOST` | If email set | — | SMTP hostname — `smtp.gmail.com` / `smtp.office365.com` |
+| `PRX_SMTP_PORT` | No | `587` | SMTP port — `587` (STARTTLS) or `465` (SSL) |
+| `PRX_SMTP_USER` | If email set | — | SMTP login username |
+| `PRX_SMTP_PASS` | If email set | — | SMTP password or app password |
+
+> **Note:** `JIRA_URL`, `JIRA_USERNAME`, and `JIRA_API_TOKEN` are also set in `.mcp.json` (required for the Atlassian MCP server). Setting them in `.env` as well means any script or automated run that does not load `.mcp.json` directly will still have access to the Jira credentials.
+
+> **Note:** The polling script (`poll-jira.sh`) loads Jira credentials from its own `.jira-credentials` file (see [Polling Script Setup](#polling-script-setup)) rather than from `.env`. This keeps the polling setup self-contained and schedulable without a Claude Code session.
 
 ---
 
