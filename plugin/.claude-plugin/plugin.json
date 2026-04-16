@@ -1,9 +1,8 @@
 {
   "name": "prx",
-  "description": "Internal Prx developer toolkit for V1 development workflow",
+  "description": "Claude Code plugin for structured Jira-driven developer workflow — dev mode and PR review mode",
   "version": "1.2.1",
   "author": {
-    "name": "Prx",
-    "email": "dev@prevoir.mu"
+    "name": "dodogeny"
   }
 }

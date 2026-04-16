@@ -1,30 +1,34 @@
 ---
 name: dev
-description: "\"Prx internal developer workflow skill. Supports two modes — (1) Dev mode: use when a developer provides a Jira ticket URL or ticket key (e.g. IV-1234) and wants to start development work; handles the full workflow from reading the Jira ticket to proposing a code fix. (2) PR Review mode: use when a developer wants to review code changes for a Jira ticket; analyses the ticket context plus all code changes on the associated feature branch, then outputs findings and recommendations as a PDF report.\""
+description: "\"Structured Jira-driven developer workflow skill. Supports two modes — (1) Dev mode: use when a developer provides a Jira ticket URL or ticket key (e.g. PROJ-1234) and wants to start development work; handles the full workflow from reading the Jira ticket to proposing a code fix. (2) PR Review mode: use when a developer wants to review code changes for a Jira ticket; analyses the ticket context plus all code changes on the associated feature branch, then outputs findings and recommendations as a PDF report.\""
 version: 1.2.1
 ---
 
-# Prx Dev Workflow Skill
+# Dev Workflow Skill
 
-Full end-to-end developer onboarding workflow for V1 Jira tickets. Guides Claude through reading, understanding, branching, locating, and fixing a reported issue or enhancement.
+Full end-to-end developer workflow for Jira tickets. Guides Claude through reading, understanding, branching, locating, and fixing a reported issue or enhancement.
 
 ## Configuration
 
-Before executing any step, resolve the following variables by running `echo $HOME` via Bash:
+Before executing any step, resolve the following variables. Run `echo $PRX_REPO_DIR` via Bash to confirm it is set — if it is empty, stop immediately and tell the developer: `PRX_REPO_DIR is not set. Add it to your .env file: PRX_REPO_DIR=/absolute/path/to/your/repo`
 
 ```
-REPO_DIR       = $HOME/git/insight
+REPO_DIR       = ${PRX_REPO_DIR}   ← set via PRX_REPO_DIR in .env
 
 KB_MODE        = ${PRX_KB_MODE:-local}
-                 ┌─ local        → KNOWLEDGE_DIR = ${PRX_KNOWLEDGE_DIR:-$HOME/Documents/Prx/KnowledgeBase}
-                 └─ distributed  → KNOWLEDGE_DIR = ${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}
+                 ┌─ local        → KNOWLEDGE_DIR = ${PRX_KNOWLEDGE_DIR:-$HOME/.dev-skill/knowledge-base}
+                 └─ distributed  → KNOWLEDGE_DIR = ${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}
 
 PRX_KB_REPO        = (required when KB_MODE=distributed — URL of the team's dedicated private KB repository)
                           e.g.  git@bitbucket.org:mycompany/prx-kb.git
                                 https://github.com/mycompany/prx-kb.git
-PRX_KB_LOCAL_CLONE = (optional — local clone path for the KB repo; default: $HOME/.prx/kb)
+PRX_KB_LOCAL_CLONE = (optional — local clone path for the KB repo; default: $HOME/.dev-skill/kb)
 PRX_KB_KEY         = (optional when KB_MODE=distributed — AES-256-CBC passphrase for defense-in-depth
                           encryption; omit to push plain Markdown to the private repo)
+
+PRX_SOURCE_REPO_URL = (optional — hosted URL of your codebase, e.g. https://github.com/myorg/myrepo
+                          Used to cross-check KB file:line references against the live branch.
+                          Omit to skip the cross-check.)
 
 PRX_EMAIL_TO       = (optional — recipient address; if set, the report is emailed after saving)
 PRX_SMTP_HOST      = (required when PRX_EMAIL_TO is set — SMTP server hostname, e.g. smtp.gmail.com)
@@ -51,14 +55,14 @@ The knowledge base is a shared, persistent store that grows richer after every D
 
 | Mode | KB location on disk | Distribution | Access control | Encryption | Agent read/write path |
 |------|--------------------|--------------|-----------------|-----------|-----------------------|
-| **local** (default) | `KNOWLEDGE_DIR` (`$HOME/Documents/Prx/KnowledgeBase/`) | None — one machine only | Local filesystem | None | `KNOWLEDGE_DIR` directly |
-| **distributed** | `KNOWLEDGE_DIR` (local clone of `PRX_KB_REPO`) | Via git push/pull to the team's private KB repository | Private repo permissions (Bitbucket, GitHub Enterprise, GitLab, etc.) | Optional AES-256-CBC (`.md.enc` files) | `KNOWLEDGE_DIR` or `/tmp/prx-kb-{PID}/` if encrypted |
+| **local** (default) | `KNOWLEDGE_DIR` (`$HOME/.dev-skill/knowledge-base/`) | None — one machine only | Local filesystem | None | `KNOWLEDGE_DIR` directly |
+| **distributed** | `KNOWLEDGE_DIR` (local clone of `PRX_KB_REPO`) | Via git push/pull to the team's private KB repository | Private repo permissions (Bitbucket, GitHub Enterprise, GitLab, etc.) | Optional AES-256-CBC (`.md.enc` files) | `KNOWLEDGE_DIR` or `/tmp/dev-skill-kb-{PID}/` if encrypted |
 
 **`KB_WORK_DIR`** — the path agents use for all KB reads and writes during a session:
 ```
 KB_WORK_DIR = (KB_MODE=local)                            → {KNOWLEDGE_DIR}
             = (KB_MODE=distributed, no PRX_KB_KEY)   → {KNOWLEDGE_DIR}
-            = (KB_MODE=distributed, PRX_KB_KEY set)  → /tmp/prx-kb-{$$}/   ← decrypted session copy
+            = (KB_MODE=distributed, PRX_KB_KEY set)  → /tmp/dev-skill-kb-{$$}/   ← decrypted session copy
 ```
 
 Resolve `KB_WORK_DIR` in Step 0a and use it consistently for every KB read/write operation thereafter.
@@ -93,11 +97,11 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
 
 **Batch decrypt (Step 0a — pull to session temp dir):**
 ```bash
-KB_WORK_DIR="/tmp/prx-kb-$$"
+KB_WORK_DIR="/tmp/dev-skill-kb-$$"
 mkdir -p "$KB_WORK_DIR/tickets" "$KB_WORK_DIR/shared"
 find "$KNOWLEDGE_DIR" -name "*.md.enc" | while read f; do
   rel="${f#$KNOWLEDGE_DIR/}"           # e.g. tickets/IV-3672.md.enc
-  out="$KB_WORK_DIR/${rel%.enc}"       # e.g. /tmp/prx-kb-$$/tickets/IV-3672.md
+  out="$KB_WORK_DIR/${rel%.enc}"       # e.g. /tmp/dev-skill-kb-$$/tickets/IV-3672.md
   mkdir -p "$(dirname "$out")"
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 -md sha512 \
     -in "$f" -out "$out" -pass env:PRX_KB_KEY 2>/dev/null || \
@@ -134,7 +138,7 @@ _(Applies to `KB_MODE=distributed`.)_
 | Accidental public exposure of the repo | **Optional encryption** — if `PRX_KB_KEY` is set, files are AES-256-CBC encrypted; the repo can be made public and no content is readable without the key. |
 | Brute-force key recovery (if encrypted) | PBKDF2-SHA512 at 310,000 iterations per file makes each guess computationally expensive. |
 | Key accidentally committed (if encrypted) | `PRX_KB_KEY` is an env var only; `.md.enc` files contain no key material. |
-| Plaintext KB in session temp dir (if encrypted) | Decrypted files live only in `/tmp/prx-kb-{PID}/`; deleted after push (Step 13f/R9f). |
+| Plaintext KB in session temp dir (if encrypted) | Decrypted files live only in `/tmp/dev-skill-kb-{PID}/`; deleted after push (Step 13f/R9f). |
 
 **Primary security boundary:** the private repository's access control. Encryption is additive.
 
@@ -156,7 +160,7 @@ _(Applies to `KB_MODE=distributed`.)_
     └── regression-risks.md (or .md.enc)← known fragile areas requiring care on every change
 ```
 
-In `KB_MODE=local` all files are plain `.md`. In `KB_MODE=distributed` all files on disk are `.md.enc`; the plain `.md` files exist only in `KB_WORK_DIR=/tmp/prx-kb-{PID}/` during the session.
+In `KB_MODE=local` all files are plain `.md`. In `KB_MODE=distributed` all files on disk are `.md.enc`; the plain `.md` files exist only in `KB_WORK_DIR=/tmp/dev-skill-kb-{PID}/` during the session.
 
 > **Note:** `PALACE.md` no longer exists as a separate file. The Memory Palace (room trigger tables) and the Master Index (flat entry list) are both sections within `INDEX.md`.
 
@@ -231,7 +235,7 @@ Each knowledge entry has a **trigger** — a 5–8 word memorable phrase that le
 - **`## Master Index`** — the fallback layer. A flat list of all entries, greppable by component, label, ticket key, and trigger.
 
 ```markdown
-# Prx Knowledge Base
+# Dev Knowledge Base
 Updated: YYYY-MM-DD | Rooms: 6 | Triggers: N | Ticket entries: N | Shared entries: N
 
 ## Memory Palace
@@ -482,8 +486,8 @@ The knowledge base is augmented by two live external sources that are queried du
 
 | Source | URL | What to query | When to use |
 |--------|-----|--------------|-------------|
-| **Confluence** | `https://prevoirsolutions.atlassian.net/wiki/x/uACUAw` | Business requirements, functional specs, known limitations, feature documentation | Before Step 2 — search for the ticket's component or label to find any spec pages |
-| **Bitbucket / V1 Source** | `https://bitbucket.org/prevoirsolutionsinformatiques/insight` (`development` branch) | Live source code, recent commit history, current class state | Before Step 5 — cross-check the KB's file:line references against the live development branch to confirm they are still current |
+| **Confluence** | `{JIRA_URL}/wiki` (derived from your `JIRA_URL` env var) | Business requirements, functional specs, known limitations, feature documentation | Before Step 2 — search for the ticket's component or label to find any spec pages |
+| **Source Repository** | `PRX_SOURCE_REPO_URL` env var (optional — set to your codebase's hosted URL) | Live source code, recent commit history, current class state | Before Step 5 — cross-check the KB's file:line references against the live main branch to confirm they are still current |
 
 #### Confluence Query (Step 0b — External Layer 1)
 
@@ -506,7 +510,8 @@ If no matching Confluence pages are found, state: "Confluence: no pages found fo
 When the KB contains `file:line` references for the matched components, verify they are still current against the live `development` branch before the investigation team acts on them:
 
 ```
-URL pattern: https://bitbucket.org/prevoirsolutionsinformatiques/insight/src/development/{file_path}
+URL pattern: {PRX_SOURCE_REPO_URL}/src/{main-branch}/{file_path}
+(Skip this cross-check if PRX_SOURCE_REPO_URL is not set.)
 ```
 
 For each KB entry that cites a specific `file:line`:
@@ -524,11 +529,11 @@ The distributed knowledge base lives in a **dedicated private git repository** (
 
 **First-time setup (once — when creating the KB repo for the team):**
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 mkdir -p "$KB_CLONE/tickets" "$KB_CLONE/shared"
 cd "$KB_CLONE"
 git init && git remote add origin "$PRX_KB_REPO"
-echo "# Prx Knowledge Base" > README.md
+echo "# Dev Knowledge Base" > README.md
 
 # Create .gitattributes — union merge prevents conflicts on append-only KB files
 cat > .gitattributes << 'EOF'
@@ -544,7 +549,7 @@ git push -u origin main
 
 If the repo already exists and a developer is cloning for the first time:
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 git clone "$PRX_KB_REPO" "$KB_CLONE"
 ```
 
@@ -557,7 +562,7 @@ This is handled **automatically** by the updated Pull (Step 0a) logic below — 
 > **Key requirement — read before running:** If the team KB repo uses encryption (i.e. other contributors have `PRX_KB_KEY` set), you **must** set the same `PRX_KB_KEY` passphrase in your shell profile before migrating. Migrating without it pushes plain `.md` files that are invisible to every encrypted contributor, and encrypted files they push will be invisible to you. The migration script below detects this mismatch and aborts with instructions if the remote already contains `.md.enc` files and your `PRX_KB_KEY` is unset.
 
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 cd "$KB_CLONE"
 git init
 git remote add origin "$PRX_KB_REPO"
@@ -643,7 +648,7 @@ Subsequent sessions treat the directory as a normal distributed clone (the `.git
 
 **Pull (Step 0a — before session, distributed mode only):**
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 
 if [ -d "$KB_CLONE/.git" ]; then
   # Normal path — already a git repo, just pull latest
@@ -725,7 +730,7 @@ fi
 
 **Push (Steps 13f and R9f — after session, distributed mode only):**
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 cd "$KB_CLONE"
 
 # Step 1 — Pull latest from remote before committing (rebase keeps history clean)
@@ -814,10 +819,10 @@ This skill operates in two modes. Detect the mode from the invocation:
 ## When to Use This Skill
 
 Invoke when the developer provides:
-- A Jira ticket URL: `https://prevoirsolutions.atlassian.net/browse/IV-XXXX`
-- A Jira ticket key: `IV-XXXX`
-- A phrase like `/prx:dev IV-3672` or `/dev IV-3672` or "start dev on IV-3672" or "pick up IV-3672"
-- A phrase like `review IV-3672` or `PR review IV-3672` or `/dev review IV-3672` for code review
+- A Jira ticket URL: `https://yourcompany.atlassian.net/browse/PROJ-1234`
+- A Jira ticket key: `PROJ-1234`
+- A phrase like `/prx:dev PROJ-1234` or `/dev PROJ-1234` or "start dev on PROJ-1234" or "pick up PROJ-1234"
+- A phrase like `review PROJ-1234` or `PR review PROJ-1234` or `/dev review PROJ-1234` for code review
 
 Do NOT invoke for general code questions unrelated to a Jira ticket.
 
@@ -864,7 +869,7 @@ If not set, skip all remaining distributed steps and proceed without prior knowl
 Use the pull command from the **Git Sync Rules** section above. If the local clone does not exist, clone the repo first.
 
 ```bash
-KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.prx/kb}"
+KB_CLONE="${PRX_KB_LOCAL_CLONE:-$HOME/.dev-skill/kb}"
 if [ -d "$KB_CLONE/.git" ]; then
   cd "$KB_CLONE" && git pull origin main && \
     echo "KB: pulled latest from ${PRX_KB_REPO}."
@@ -882,10 +887,10 @@ fi
 
 ```bash
 # Clean prior temp dirs
-rm -rf /tmp/prx-kb-[0-9]* 2>/dev/null
+rm -rf /tmp/dev-skill-kb-[0-9]* 2>/dev/null
 
 # Decrypt to session temp dir
-KB_WORK_DIR="/tmp/prx-kb-$$"
+KB_WORK_DIR="/tmp/dev-skill-kb-$$"
 mkdir -p "$KB_WORK_DIR/tickets" "$KB_WORK_DIR/shared"
 find "$KNOWLEDGE_DIR" -name "*.md.enc" | while read f; do
   rel="${f#$KNOWLEDGE_DIR/}"
@@ -911,7 +916,7 @@ echo "KB: decrypted ${enc_count} encrypted files → ${KB_WORK_DIR}/"
 
 If `INDEX.md` does not exist, create:
 ```markdown
-# Prx Knowledge Base
+# Dev Knowledge Base
 Updated: {today} | Rooms: 6 | Triggers: 0 | Ticket entries: 0 | Shared entries: 0
 
 ## Memory Palace
@@ -2289,7 +2294,7 @@ Provide a ready-to-paste pull request description:
 ```
 ## {TICKET_KEY} — {Ticket Summary}
 
-**Jira:** https://prevoirsolutions.atlassian.net/browse/{TICKET_KEY}
+**Jira:** {JIRA_URL}/browse/{TICKET_KEY}
 **Branch:** {feature branch name}
 **Base:** {base branch}
 **Risk:** {Low / Medium / High} — {one-line justification from Step 9g}
@@ -2364,7 +2369,7 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate eve
 | Field | Value |
 |-------|-------|
 | Date | {today's date} |
-| Analyst | Claude (Prx Dev Skill v1.2.1) |
+| Analyst | Claude (Dev Skill v1.2.1) |
 | Ticket type | {Bug / Story / Enhancement} |
 | Priority | {priority} |
 | Status | {status} |
@@ -3516,7 +3521,7 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-review.md`. Populate every
 | Field | Value |
 |-------|-------|
 | Date | {today's date} |
-| Reviewer | Claude Review Panel (Prx Dev Skill v1.2.1) |
+| Reviewer | Claude Review Panel (Dev Skill v1.2.1) |
 | Ticket type | {Bug fix / Enhancement} |
 | Priority | {priority} |
 | Status | {status} |
@@ -3847,14 +3852,8 @@ Present output in clearly labelled sections. Use markdown headings. Keep each se
 
 ## Project Context
 
-- **Repository:** `{REPO_DIR}/`
-- **Main branch:** `development`
+- **Repository:** `{REPO_DIR}/` (configured via `REPO_DIR` in `SKILL.md` Configuration section)
+- **Main branch:** `development` (or as configured in your repo)
 - **Branch format:** `Feature/{TICKET_KEY}_{Title}`
-- **Jira project:** `IV` — `https://prevoirsolutions.atlassian.net`
-- **Tech stack:** Java (GWT frontend, Spring-like backend), Oracle + PostgreSQL, Maven
-- **Key paths:**
-  - Frontend: `fcfrontend/src/main/java/com/fc/fe/`
-  - Backend API: `fcbackend/src/main/java/com/fc/api/`
-  - Models: `fcbackend/src/main/java/com/fc/model/`
-  - Plugin/Workers: `fcplugin/src/main/java/com/fc/plugin/`
-  - DB upgrades: `fcbuild/scripts/upgrades/`
+- **Jira instance:** `{JIRA_URL}` (from env var)
+- **Tech stack:** Adapt the file path patterns in steps 5–8 to match your project's directory structure.

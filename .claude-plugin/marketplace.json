@@ -1,10 +1,10 @@
 {
   "name": "prx",
   "owner": {
-    "name": "Prx"
+    "name": "dodogeny"
   },
   "metadata": {
-    "description": "Internal Prx developer toolkit for V1 development workflow",
+    "description": "Claude Code plugin for structured Jira-driven developer workflow — dev mode and PR review mode",
     "homepage": ""
   },
   "plugins": [
@@ -12,7 +12,7 @@
       "name": "prx",
       "version": "1.2.1",
       "source": "./plugin",
-      "description": "Internal Prx developer toolkit for V1 development workflow"
+      "description": "Claude Code plugin for structured Jira-driven developer workflow"
     }
   ]
 }
