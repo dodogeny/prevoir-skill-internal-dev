@@ -35,6 +35,15 @@ PRX_SMTP_HOST      = (required when PRX_EMAIL_TO is set — SMTP server hostname
 PRX_SMTP_PORT      = (optional — SMTP port; default: 587)
 PRX_SMTP_USER      = (required when PRX_EMAIL_TO is set — SMTP login username)
 PRX_SMTP_PASS      = (required when PRX_EMAIL_TO is set — SMTP password or app password)
+
+PRX_ATTACHMENT_MAX_MB = (optional — maximum attachment size in MB to download and analyse; default: 0 = no limit.
+                             Images/screenshots are always read regardless of this setting.
+                             Set to e.g. 10 to skip attachments larger than 10 MB.)
+
+AUTO_MODE          = (optional — Y/YES/true to bypass all interactive prompts and permission gates and run
+                             the full workflow automatically; default: N. In auto mode the skill applies safe
+                             defaults at every gate, does not ask for confirmation, and automatically applies
+                             the proposed fix to the newly created feature branch.)
 ```
 
 **`KB_MODE=local` (default):** KB lives in the developer's home directory. No git sync. No encryption. Private to one machine.
@@ -790,7 +799,14 @@ fi
 
 ## Headless Mode
 
-If the environment variable `AUTO_MODE=true` is set, the skill runs in **analysis-only mode** with no interactive prompts and no side effects:
+If `AUTO_MODE` is set to `Y`, `YES`, or `true` (case-insensitive), the skill runs in **headless mode** with no interactive prompts and no blocking gates. Default is `N` (interactive). Resolve at session start:
+
+```bash
+_am=$(echo "${AUTO_MODE:-N}" | tr '[:lower:]' '[:upper:]')
+[ "$_am" = "Y" ] || [ "$_am" = "YES" ] || [ "$_am" = "TRUE" ] && AUTO_MODE_ON=1 || AUTO_MODE_ON=0
+```
+
+When `AUTO_MODE_ON=1`, the skill runs in **analysis-only mode** with no interactive prompts and no side effects:
 
 | Gate | Interactive behaviour | Headless default |
 |------|-----------------------|-----------------|
@@ -1161,9 +1177,15 @@ For each linked ticket found:
    - Root cause or fix details from a related bug (especially "is caused by" / "is cloned from" links)
    - Design decisions or constraints described in parent epics or stories
    - Known workarounds or regression notes from "relates to" tickets
-3. Summarise each linked ticket in one line: `[KEY] (type, status) — one-sentence relevance to this ticket`
+3. **Discover associated PRs** — check the ticket's remote issue links and development panel for any linked pull requests. For each PR found:
+   - Fetch the PR title, status (open/merged/declined), source branch, and target branch
+   - Retrieve the full diff / file changes from the PR
+   - Analyse the code changes: what was modified, why (based on PR description and commit messages), and whether the change is relevant to the current ticket's problem or fix
+   - If the PR is merged, note which branch it landed on and when
+   - Summarise: `PR #N — "[title]" (status) — one-sentence relevance and key code change`
+4. Summarise each linked ticket in one line: `[KEY] (type, status) — one-sentence relevance to this ticket`
 
-Apply the same attachment analysis rules (size limits, file type handling) to qualifying attachments on linked tickets.
+Apply the same attachment analysis rules (file type handling) to qualifying attachments on linked tickets.
 
 If the linked ticket provides no additional context beyond what the primary ticket already contains, state: "No additional context from linked ticket [KEY]."
 
@@ -1173,18 +1195,25 @@ Carry all relevant findings from linked tickets forward into the **Prior Investi
 
 #### Diagnostic Artefact Analysis
 
-Download and analyse all qualifying attachments from the ticket. Apply these rules:
+Download and analyse all qualifying attachments from the ticket.
+
+Resolve the size limit once before processing attachments:
+```
+ATTACH_MAX_MB = ${PRX_ATTACHMENT_MAX_MB:-0}   ← 0 means no limit
+```
+
+Apply these rules:
 
 | Attachment type | Size limit | Action |
 |----------------|------------|--------|
-| Images / screenshots | ≤ 10 MB | Describe visually — UI state, error messages, highlighted fields |
-| Log files (`.log`, `.txt`) | ≤ 10 MB | Scan for stack traces, exceptions, and error patterns |
-| Thread dumps (`.tdump`, `.txt` with thread stacks) | ≤ 10 MB | Full analysis — see below |
-| Memory / heap dumps (`.hprof`, `.heap`) | ≤ 10 MB | Full analysis — see below |
-| XML / config files | ≤ 10 MB | Check for relevant config values, malformed entries |
-| draw.io diagrams (`.drawio`, `.xml`) | ≤ 10 MB | Describe the flow depicted |
+| Images / screenshots | **none** — always read regardless of `PRX_ATTACHMENT_MAX_MB` | Describe visually — UI state, error messages, highlighted fields |
+| Log files (`.log`, `.txt`) | `ATTACH_MAX_MB` (0 = no limit) | Scan for stack traces, exceptions, and error patterns |
+| Thread dumps (`.tdump`, `.txt` with thread stacks) | `ATTACH_MAX_MB` (0 = no limit) | Full analysis — see below |
+| Memory / heap dumps (`.hprof`, `.heap`) | `ATTACH_MAX_MB` (0 = no limit) | Full analysis — see below |
+| XML / config files | `ATTACH_MAX_MB` (0 = no limit) | Check for relevant config values, malformed entries |
+| draw.io diagrams (`.drawio`, `.xml`) | `ATTACH_MAX_MB` (0 = no limit) | Describe the flow depicted |
 | Binary files, archives (`.zip`, `.jar`, `.war`, `.class`) | any | Skip — state "skipped (binary/archive)" |
-| Any file > 10 MB | — | Skip — state "skipped (exceeds 10 MB limit)" |
+| Non-image file exceeding `ATTACH_MAX_MB` | — | Skip — state "skipped (exceeds ${ATTACH_MAX_MB} MB limit)" |
 
 For each attachment analysed, state its filename, type, size, and a one-line summary of what was found before the detailed analysis below.
 
@@ -1217,7 +1246,7 @@ For each attachment analysed, state its filename, type, size, and a one-line sum
 - Note any values that appear incorrect, missing, or relevant to the reported issue
 
 If no attachments are present, state: "No attachments found — proceeding from description only."
-If attachments are present but none are qualifying types, state: "Attachments present but all skipped (binary/archive or exceeds 10 MB)."
+If attachments are present but none are qualifying types, state: "Attachments present but all skipped (binary/archive or exceeds configured size limit)."
 
 Carry all findings forward into the **Prior Investigation Summary** in Step 3 and the **Root Cause Analysis** in Step 7.
 
@@ -2373,7 +2402,7 @@ mkdir -p "$REPORT_DIR"
 
 #### 12b. Generate Markdown Source
 
-Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate every section below verbatim from the output already produced in each step — do not summarise or abbreviate. Every table, code block, hypothesis box, statement block, and verdict produced earlier must appear in full. Use the placeholders as structural guides; replace each with the actual content from that step.
+Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate every section below verbatim from the output already produced in each step — **do not summarise, abbreviate, truncate, or omit anything**. Every table, code block, hypothesis box, statement block, verdict, PR diff analysis, attachment finding, and linked ticket detail produced earlier must appear in full. The PDF is the complete record of the session — if it was produced during analysis, it must be in the report. Use the placeholders as structural guides; replace each with the actual content from that step.
 
 ````
 # {TICKET_KEY} — {Ticket Summary}
@@ -2437,6 +2466,21 @@ Write a temporary Markdown file at `/tmp/{TICKET_KEY}-analysis.md`. Populate eve
 {For each linked ticket: "[KEY] (type, status) — one-sentence relevance and any additional context extracted."
 If no linked tickets: "No linked tickets found."
 If linked tickets exist but provide no new context: "No additional context from linked ticket [KEY]."}
+
+### Associated PRs (from Linked Tickets)
+
+{For each PR discovered across the primary ticket and all linked tickets:
+
+  PR #N — "[title]" (status: open / merged / declined)
+  Branch : {source} → {target}
+  Merged : {date, or "Not merged"}
+  Relevance: {one-sentence relevance to this ticket}
+
+  **Code Changes:**
+  {Full diff analysis — files changed, what was modified, why (from PR description and commit messages),
+  and whether the change is directly related to this ticket's problem or fix.}
+
+If no PRs were found on any ticket: "No associated PRs found."}
 
 ### Attachment Analysis
 
