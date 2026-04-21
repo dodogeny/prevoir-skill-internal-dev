@@ -55,6 +55,20 @@ PRX_REPORT_VERBOSITY      = (optional — controls terminal output verbosity; de
                                          Morgan's verdicts) but panel narrative condensed to bullet summaries;
                                          the PDF always contains full content regardless of this setting
                                minimal → structured blocks only — no panel narrative, no debate, no check-ins)
+
+PRX_INCLUDE_SM_IN_SESSIONS_ENABLED         = (optional — enable Bryan's Scrum Master retrospective (Step 14 / R10);
+                               default: N. Set to Y/YES/true to activate. When N, Steps 14 and R10
+                               are skipped entirely and no process-efficiency.md entry is written.)
+
+PRX_SKILL_UPGRADE_MIN_SESSIONS    = (optional — number of sessions with an approved change before Bryan pushes to
+                               the plugin repo main branch; default: 3. Set to 1 to push after every session.
+                               Only relevant when PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y.)
+
+PRX_BUDGET_BUG            = (optional — target cost ceiling per bug ticket in USD; default: 0.06.
+                               Bryan flags sessions that exceed this as ⚠️ Over budget.
+                               Only relevant when PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y.)
+PRX_BUDGET_ENHANCEMENT    = (optional — target cost ceiling per enhancement ticket in USD; default: 0.04.
+                               Only relevant when PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y.)
 ```
 
 **`KB_MODE=local` (default):** KB lives in the developer's home directory. No git sync. No encryption. Private to one machine.
@@ -191,7 +205,8 @@ _(Applies to `KB_MODE=distributed`.)_
 │   ├── business-rules.md  (or .md.enc) ← domain invariants discovered across all tickets
 │   ├── architecture.md    (or .md.enc) ← class hierarchies, data flows, ownership decisions
 │   ├── patterns.md        (or .md.enc) ← recurring bug/fix patterns with frequency counters
-│   └── regression-risks.md (or .md.enc)← known fragile areas requiring care on every change
+│   ├── regression-risks.md (or .md.enc)← known fragile areas requiring care on every change
+│   └── process-efficiency.md (or .md.enc) ← Bryan's session log: cost, budget, changes applied
 ├── core-mental-map/                    ← compressed codebase mental model (contributed by all agents)
 │   ├── INDEX.md   (or INDEX.md.enc)   ← quick index: what topics exist, entry counts, last-updated
 │   ├── architecture.md  (or .md.enc)  ← system layers, component boundaries, key class relationships
@@ -1176,6 +1191,15 @@ If any `core-mental-map/*.md` content file does not exist, create it with a titl
 
 The `lessons-learned/` directory requires no skeleton files — developer files are created on first write (Step 13h). No action needed on init if the directory is empty.
 
+If `shared/process-efficiency.md` does not exist, create it:
+```markdown
+# Process Efficiency Log
+Sessions tracked: 0 | Bryan changes pushed: 0 | Sessions since last push: 0
+
+| Session | Date | Ticket | Type | Cost | Budget | Status | Change |
+|---------|------|--------|------|------|--------|--------|--------|
+```
+
 **Re-index after pull (distributed mode) or on every init (local mode):**
 
 After a pull, other developers may have pushed ticket or shared files that are not yet referenced in the local INDEX.md. Scan the actual files on disk and reconcile any missing entries — do **not** rebuild from scratch; only add what is absent.
@@ -1899,8 +1923,9 @@ State: `Complexity gate: {Fast-path / Full panel} — {one-line reason}`
 | Senior Engineer 2 | Sam | 10 yrs full-stack Java, Spring, GWT RPC | Runtime data flow & logic tracing |
 | Senior Engineer 3 | Jordan | 15 yrs Java, systems architect background | Defensive patterns & structural anti-patterns |
 | **Senior Lead Tester** | **Riley** | 18 yrs QA & test architecture, Java enterprise, GWT, regression suites | Assesses testability and impact of each hypothesis. Questions engineer findings. Flags regression risk and edge cases. Riley's concerns are factored into Morgan's verdict and Fix Review. |
+| **Scrum Master** | **Bryan** | 15 yrs agile delivery, process optimisation, token & cost efficiency | Silent observer for Steps 0–13. Does not intervene in the investigation. Convenes Step 14 retrospective at the end of every session (Dev and PR Review alike) to audit process friction, token spend, and propose one focused SKILL.md improvement per session. |
 
-Engineers (Alex, Sam, Jordan) are competing for the **Best Analysis** distinction. Morgan is not competing — Morgan arbitrates. Morgan's verdict is binding and may endorse, refine, or override any engineer's hypothesis. Riley is not competing — Riley challenges and assesses from a testing perspective.
+Engineers (Alex, Sam, Jordan) are competing for the **Best Analysis** distinction. Morgan is not competing — Morgan arbitrates. Morgan's verdict is binding and may endorse, refine, or override any engineer's hypothesis. Riley is not competing — Riley challenges and assesses from a testing perspective. Bryan is not part of the investigation — Bryan observes the whole session and acts only in Step 14.
 
 ---
 
@@ -3459,6 +3484,85 @@ Display:
 
 ---
 
+### Step 14 — Bryan's Retrospective
+
+**Skip condition:** If `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` is not set or is not `Y`/`YES`/`true` (case-insensitive), skip this step entirely. Display: `⏭️  Step 14 skipped — set PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y in .env to activate Bryan's retrospective.`
+
+Bryan runs after every Dev Mode session, immediately after Step 13h. Bryan is a **silent observer** — he does not interrupt Steps 0–13. He now convenes a brief retrospective with the team.
+
+#### Bryan's Mandate
+
+- **Process audit** — identify friction, unclear steps, or repeated work from this session
+- **Token audit** — compare Step 11 stats against budget targets; flag which steps consumed the most tokens
+- **One change rule** — propose exactly one focused SKILL.md improvement per session; if nothing material was observed, state "No change proposed"
+- **Consensus gate** — the change requires unanimous approval from Morgan, Riley, and the highest-scoring engineer from Step 7 (or any one engineer if it was an enhancement)
+- **Push gate** — controlled by `PRX_SKILL_UPGRADE_MIN_SESSIONS` (default: 3); Bryan tracks sessions since last push in `shared/process-efficiency.md`; when the count reaches the threshold, commit and push all accumulated Bryan changes to the plugin repo's main branch
+
+#### Step 14 Output
+
+```
+── Bryan — Scrum Master Retrospective ────────────────────────────────
+
+📊 TOKEN AUDIT
+  Total this session  : ~{N} in / ~{N} out | ${cost}
+  Budget target       : {ticket type} < ${budget}
+  Status              : ✅ Within budget / ⚠️ Over by {X}%
+
+  Step breakdown (estimated):
+  ┌─────────────────────────────┬──────────┬────────┐
+  │ Step                        │ Est. %   │ Flag   │
+  ├─────────────────────────────┼──────────┼────────┤
+  │ {Step name}                 │ {N}%     │ ✅/⚠️  │
+  └─────────────────────────────┴──────────┴────────┘
+
+🔍 PROCESS OBSERVATIONS
+  - {Observation 1 — specific friction or inefficiency seen this session}
+  - {Observation 2}
+
+💡 PROPOSED SKILL.md CHANGE  (or "No change proposed this session")
+  Area     : {Step or section}
+  Problem  : {what is slow, unclear, or wasteful}
+  Change   : {the specific edit — one sentence}
+  Est. saving : {token or time impact if measurable}
+
+  Before: "{relevant current wording}"
+  After : "{proposed replacement wording}"
+
+🗳️ CONSENSUS
+  Morgan   : ✅ / ❌ — {one-line reason}
+  Riley    : ✅ / ❌ — {one-line reason}
+  {Engineer}: ✅ / ❌ — {one-line reason}
+
+  Result : Consensus reached ✅ / Not reached ❌ — change dropped
+
+📝 SKILL.md UPDATE  (only if consensus reached)
+  Version bumped: {current} → {new patch}
+  Queued for push. Sessions since last push: {N} / {PRX_SKILL_UPGRADE_MIN_SESSIONS}
+  {If N >= PRX_SKILL_UPGRADE_MIN_SESSIONS}:
+    git commit -m "v{new} — Bryan: {one-line description}" && git push origin main
+    → Pushed ✅
+
+──────────────────────────────────────────────────────────────────────
+```
+
+#### Consensus Rules
+
+- Unanimous approval required (Morgan + Riley + one engineer all vote ✅)
+- If any voter votes ❌, the change is dropped for this session; Bryan may re-raise it in a future session if the same friction recurs
+- If no change is proposed, skip the consensus vote entirely
+
+#### process-efficiency.md Update
+
+After every Step 14 (regardless of whether a change was approved), append a row to `shared/process-efficiency.md`:
+
+```markdown
+| {session N} | {today} | {TICKET_KEY} | {Bug/Enh} | ${cost} | ${budget} | ✅/⚠️ | {change one-liner or "—"} |
+```
+
+Also update the header line: increment `Sessions tracked`, `Bryan changes pushed` (if pushed this session), and `Sessions since last push` (reset to 0 on push, increment otherwise).
+
+---
+
 ---
 
 ---
@@ -4352,15 +4456,23 @@ If push fails: replace the `Git` line with `Git: KB_PUSH_WARN — committed loca
 
 ---
 
+### Step R10 — Bryan's Retrospective
+
+**Skip condition:** Same as Step 14 — if `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` is not `Y`/`YES`/`true`, skip entirely.
+
+Identical to Step 14 in Dev Mode. Bryan runs after every PR Review session. The token audit uses the stats from Step R7 (session stats). The consensus panel is Morgan + Riley + one reviewer from Step R5 (the reviewer whose findings were most substantive). The `process-efficiency.md` row records verdict as the review verdict (✅ / ⚠️ / 🔄 / ❌).
+
+---
+
 ---
 
 ## Output Format
 
 Present output in clearly labelled sections. Use markdown headings. Keep each section concise but complete.
 
-**Dev Mode:** Step 0 (KB query) → Steps 1–12 → Step 13 (KB update). Step 12 produces the PDF confirmation; Step 13 produces the KB update confirmation. The "Ready to code" message follows Step 13.
+**Dev Mode:** Step 0 (KB query) → Steps 1–12 → Step 13 (KB update) → Step 14 (Bryan retrospective). Step 12 produces the PDF confirmation; Step 13 produces the KB update confirmation; Step 14 closes the session.
 
-**PR Review Mode:** Step R0 (KB query) → Steps R1–R8 → Step R9 (KB update). Step R8 produces the PDF confirmation; Step R9 produces the KB update confirmation. The "Review complete" message follows Step R9.
+**PR Review Mode:** Step R0 (KB query) → Steps R1–R8 → Step R9 (KB update) → Step R10 (Bryan retrospective). Step R8 produces the PDF confirmation; Step R9 produces the KB update confirmation; Step R10 closes the session.
 
 ---
 

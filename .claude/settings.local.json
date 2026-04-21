@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python3 *)",
       "Bash(xargs cat *)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(grep -n * plugin/skills/dev/SKILL.md)"
     ]
   },
   "hooks": {

@@ -27,6 +27,7 @@ Invoke the skill with a Jira ticket key and Claude runs a structured multi-step 
 12. **Session stats** — elapsed time, estimated tokens, estimated cost
 13. **PDF report** — full-detail report saved to `CLAUDE_REPORT_DIR`; emailed if `PRX_EMAIL_TO` is set
 14. **Update KB** — write session record; push to shared repo if distributed
+15. **Bryan's retrospective** — Scrum Master audits token spend, flags process friction, proposes one SKILL.md improvement; unanimous team vote; pushes to main after `PRX_SKILL_UPGRADE_MIN_SESSIONS` sessions
 
 ### PR Review Mode — `/prx:dev review PROJ-1234`
 
@@ -40,6 +41,7 @@ Invoke the skill with a Jira ticket key and Claude runs a structured multi-step 
 8. **Session stats** — elapsed time, estimated tokens, estimated cost
 9. **PDF review report** — saved as `{TICKET_KEY}-review.pdf` in `CLAUDE_REPORT_DIR`
 10. **Update KB** — record review verdict, confirmed rules, pattern bumps; push if distributed
+11. **Bryan's retrospective** — same as Dev Mode; token audit uses review session stats
 
 **Review verdict:** ✅ APPROVED / ⚠️ APPROVED WITH CONDITIONS / 🔄 REQUEST CHANGES / ❌ REJECT
 
@@ -225,6 +227,15 @@ Set `PRX_EMAIL_TO` to enable. Leave it unset to disable email entirely.
 
 > **Gmail:** Use an [App Password](https://myaccount.google.com/apppasswords) when 2-Step Verification is enabled.
 
+### Bryan — Scrum Master (optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` | `N` | Set to `Y` to activate Bryan's retrospective (Step 14 / R10). Disabled by default. |
+| `PRX_SKILL_UPGRADE_MIN_SESSIONS` | `3` | Sessions with an approved change before Bryan pushes to the plugin repo's main branch. Set to `1` to push after every approved session. |
+| `PRX_BUDGET_BUG` | `0.06` | Target cost ceiling (USD) per bug ticket. Bryan flags sessions over this as ⚠️ Over budget. |
+| `PRX_BUDGET_ENHANCEMENT` | `0.04` | Target cost ceiling (USD) per enhancement ticket. |
+
 ---
 
 ## Prerequisites
@@ -292,7 +303,8 @@ team-kb/
 │   ├── business-rules.md           # Domain invariants discovered across all tickets
 │   ├── architecture.md             # Class hierarchies, data flows, ownership decisions
 │   ├── patterns.md                 # Recurring bug/fix patterns with frequency counters
-│   └── regression-risks.md         # Known fragile areas requiring care on every change
+│   ├── regression-risks.md         # Known fragile areas requiring care on every change
+│   └── process-efficiency.md       # Bryan's session log: cost, budget status, changes applied
 ├── core-mental-map/                # Compressed, always-growing codebase model (codebase-driven)
 │   ├── INDEX.md                    # Quick index: topics, entry counts, last-updated
 │   ├── architecture.md             # System layers, component boundaries, key class relationships
@@ -315,7 +327,7 @@ In `KB_MODE=distributed` all files on disk are `.md.enc`; the plain `.md` files 
 
 | Folder | Driven by | What it contains |
 |--------|-----------|-----------------|
-| `shared/` | Tickets | Root causes, business rules, patterns, regression risks |
+| `shared/` | Tickets | Root causes, business rules, patterns, regression risks, process efficiency log |
 | `core-mental-map/` | Codebase | Architecture, data flows, tech stack, gotchas (compressed facts) |
 | `lessons-learned/` | Developers | Per-person sprint retrospective entries: pitfalls and hard-won insights |
 
@@ -539,6 +551,7 @@ claude plugin list
 - **Resilience:** MCP retry-with-backoff (3 attempts, 30 s apart) before failing; PDF tool pre-check at session start with graceful fallback.
 - **KB stale detection:** Opportunistic validation during file reads; auto-heal writes `RELOCATED`/`DELETED` tags in Step 13c rather than silently leaving broken references.
 - **Lessons Learned:** New `lessons-learned/` KB folder — per-developer files for recording pitfalls and sprint retrospective insights. Agents read all files at session start and surface matching entries in the Prior Knowledge block; `[LL+]` markers let agents flag new lessons during investigation (Step 13h / R9h). Works in both local and distributed mode.
+- **Bryan — Scrum Master:** New team member who observes every session silently and runs a post-session retrospective (Step 14 / R10). Audits token spend against configurable per-ticket-type budgets (`PRX_BUDGET_BUG`, `PRX_BUDGET_ENHANCEMENT`), identifies process friction, and proposes one focused SKILL.md improvement per session. Requires unanimous consensus from Morgan, Riley, and one engineer before applying. Pushes changes to the plugin repo's main branch after `PRX_SKILL_UPGRADE_MIN_SESSIONS` sessions (default: 3). Maintains a running efficiency log in `shared/process-efficiency.md`.
 
 ### v1.2.0
 
