@@ -1,10 +1,10 @@
-# Dev Skill — Claude Code Plugin `v1.2.2`
+# Prevoyant — Dev Skill · Claude Code Plugin `v1.2.2`
 
-A [Claude Code](https://claude.ai/code) plugin that gives Claude a structured, end-to-end developer workflow for Jira tickets. Three modes:
+**Prevoyant** is a [Claude Code](https://claude.ai/code) plugin — an AI agent team that runs a structured, end-to-end developer workflow for Jira tickets. Three modes:
 
 - **Dev Mode** — hand Claude a ticket key and it walks through the full cycle: ticket ingestion → root cause analysis → proposed fix → PDF report (12 steps).
-- **PR Review Mode** — hand Claude a ticket key with the word `review` and the engineering panel reviews the code changes on the associated feature branch, producing a structured PDF findings report.
-- **Estimate Mode** — hand Claude a ticket key with the word `estimate` and the full Engineering Panel runs Planning Poker. Each engineer scores the ticket across three dimensions (complexity, risk, repetition) drawing on their acquired system knowledge and the shared KB, then votes simultaneously. Structured debate continues until the team reaches unanimous consensus.
+- **PR Review Mode** — hand Claude a ticket key with the word `review` and Prevoyant's Engineering Panel reviews the code changes on the associated feature branch, producing a structured PDF findings report.
+- **Estimate Mode** — hand Claude a ticket key with the word `estimate` and Prevoyant's Engineering Panel runs Planning Poker. Each engineer scores the ticket across three dimensions (complexity, risk, repetition) drawing on their acquired system knowledge and the shared KB, then votes simultaneously. Structured debate continues until the team reaches unanimous consensus.
 
 ---
 
