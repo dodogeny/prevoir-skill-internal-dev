@@ -4683,7 +4683,7 @@ Points are **relative**: a 4-point task is twice the effort of a 2-point task. T
 
 Each engineer draws on their **acquired knowledge of the system** — the KB (`core-mental-map/`, `shared/patterns.md`, `shared/gotchas.md`, past ticket records, `lessons-learned/`) and their domain expertise — to score all three dimensions before committing to a vote. The KB is the team's shared memory; it must be actively consulted, not just acknowledged.
 
-Bryan observes silently and runs Step E8 if `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y`. The session ends only when the full team reaches a single agreed story point.
+Bryan observes silently and runs Step E7 if `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED=Y`. The session ends only when the full team reaches a single agreed story point.
 
 ---
 
@@ -4879,25 +4879,7 @@ After each re-vote:
 
 ---
 
-### Step E6 — Jira Update
-
-If `AUTO_MODE=Y`, automatically update the Story Points field in Jira to the agreed estimate.
-
-Otherwise, ask:
-```
-→ Update Story Points in Jira to {N}? [Y/n]:
-```
-
-If confirmed (or AUTO_MODE=Y), use the `editJiraIssue` MCP tool to set the story points field, then confirm:
-```
-✅ Jira updated — {TICKET_KEY} story points set to {N}
-```
-
-If declined or MCP unavailable, state the agreed estimate so the developer can update manually.
-
----
-
-### Step E7 — KB Update
+### Step E6 — KB Update
 
 Record the estimation session so future sessions can reference past sizing decisions for similar work.
 
@@ -4919,7 +4901,7 @@ what-would-change: {conditions that would shift the estimate}
 
 ---
 
-### Step E8 — Bryan's Retrospective (Estimate Mode)
+### Step E7 — Bryan's Retrospective (Estimate Mode)
 
 **Skip condition:** Same as Step 14 — if `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` is not `Y`/`YES`/`true`, skip entirely.
 
@@ -4947,7 +4929,7 @@ Present output in clearly labelled sections. Use markdown headings. Keep each se
 
 **PR Review Mode:** Step R0 (KB query) → Steps R1–R8 → Step R9 (KB update) → Step R10 (Bryan retrospective). Step R8 produces the PDF confirmation; Step R9 produces the KB update confirmation; Step R10 closes the session.
 
-**Estimate Mode:** Step E0 (KB query) → Steps E1–E7 (scope → planning poker → debate → consensus → Jira update → KB update) → Step E8 (Bryan retrospective). Step E5 produces the final estimate; Step E7 produces the KB update confirmation; Step E8 closes the session.
+**Estimate Mode:** Step E0 (KB query) → Steps E1–E6 (scope → planning poker → debate → consensus → KB update) → Step E7 (Bryan retrospective). Step E5 produces the final estimate; Step E6 produces the KB update confirmation; Step E7 closes the session.
 
 ---
 

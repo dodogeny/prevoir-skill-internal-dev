@@ -59,9 +59,8 @@ Each engineer draws on their **acquired system knowledge** and the shared KB (`c
 5. **Debate & consensus** — if votes differ, structured rounds anchored to specific dimensions: highest voter explains which dimension is underweighted and why (citing system knowledge); lowest responds with counter-evidence; others react; re-vote
 6. **Morgan's final call** — if no consensus after 3 rounds, Morgan makes a binding decision citing the deciding KB evidence; dissenting view recorded
 7. **Final estimate** — agreed story points, dimension summary, confidence level (High/Medium/Low), key assumptions, what would change the estimate
-8. **Jira update** — optionally writes the agreed story points back to the ticket
-9. **KB update** — records estimate with dimension breakdown and any `[ESTIMATE-PATTERN]` complexity insights for future sessions
-10. **Bryan's retrospective** — audits whether estimates were grounded in KB evidence; proposes SKILL.md improvements (opt-in)
+8. **KB update** — records estimate with dimension breakdown and any `[ESTIMATE-PATTERN]` complexity insights for future sessions
+9. **Bryan's retrospective** — audits whether estimates were grounded in KB evidence; proposes SKILL.md improvements (opt-in)
 
 **Confidence levels:** High = unanimous Round 1 · Medium = Round 2 · Low = Round 3+ or Morgan call
 
@@ -499,9 +498,8 @@ Story points = **Complexity + Risk + Repetition** (not hours). Scale: 1 · 2 · 
 | **E3** | Planning Poker Round 1 — simultaneous vote on 1·2·3·5·8·13·20·?; each engineer scores all three dimensions through their domain lens (Morgan: architecture; Alex: backend; Sam: business logic; Jordan: infra/security; Riley: testing) citing specific KB entries |
 | **E4** | Debate & consensus — rounds anchored to dimensions: highest voter names which dimension is underweighted and cites system evidence; lowest responds with counter-evidence; others react and re-vote; up to 3 rounds |
 | **E5** | Final estimate — story points, dimension summary (C/R/R), confidence (High/Medium/Low), key assumptions, what would change the estimate |
-| **E6** | Jira update — optionally writes agreed story points to the Jira ticket via MCP (`editJiraIssue`) |
-| **E7** | KB update — records estimate with full dimension breakdown in `tickets/{KEY}.md`; appends `[ESTIMATE-PATTERN]` to `shared/patterns.md` if a reusable complexity insight was found |
-| **E8** | Bryan's retrospective — audits whether votes were grounded in KB evidence or gut feel; proposes estimation workflow improvements (opt-in) |
+| **E6** | KB update — records estimate with full dimension breakdown in `tickets/{KEY}.md`; appends `[ESTIMATE-PATTERN]` to `shared/patterns.md` if a reusable complexity insight was found |
+| **E7** | Bryan's retrospective — audits whether votes were grounded in KB evidence or gut feel; proposes estimation workflow improvements (opt-in) |
 
 ---
 
@@ -624,11 +622,11 @@ claude plugin list
 
 ### v1.2.2 — Token Budget Tracking + Estimate Mode
 
-- **Estimate Mode:** New third mode (`/prx:dev estimate PROJ-1234`) where the Engineering Panel runs Planning Poker using the Asana story points methodology — effort measured as **Complexity + Risk + Repetition**, not hours, on a modified Fibonacci scale (1·2·3·5·8·13·20·?). Before voting, each engineer loads the KB (`core-mental-map/`, `patterns.md`, `gotchas.md`, past ticket estimates, lessons learned) so votes are grounded in acquired system knowledge, not gut feel. All five engineers vote simultaneously, then debate is structured by dimension (which of the three factors is causing disagreement?) rather than just "your number is too high." Up to 3 rounds; Morgan makes a binding final call if still split. Confidence level (High/Medium/Low) reflects how many rounds were needed. Agreed points are written back to Jira and recorded in the KB as `[ESTIMATE-PATTERN]` entries for future sessions.
+- **Estimate Mode:** New third mode (`/prx:dev estimate PROJ-1234`) where the Engineering Panel runs Planning Poker using the Asana story points methodology — effort measured as **Complexity + Risk + Repetition**, not hours, on a modified Fibonacci scale (1·2·3·5·8·13·20·?). Before voting, each engineer loads the KB (`core-mental-map/`, `patterns.md`, `gotchas.md`, past ticket estimates, lessons learned) so votes are grounded in acquired system knowledge, not gut feel. All five engineers vote simultaneously, then debate is structured by dimension (which of the three factors is causing disagreement?) rather than just "your number is too high." Up to 3 rounds; Morgan makes a binding final call if still split. Confidence level (High/Medium/Low) reflects how many rounds were needed. Agreed points are recorded in the KB as `[ESTIMATE-PATTERN]` entries for future sessions.
 - **ccusage integration:** Actual Claude token spend is now measured using [ccusage](https://www.npmjs.com/package/ccusage), which reads Claude Code's local JSONL files offline — no network call, no auth required. ccusage is downloaded automatically via `npx --yes` on first use; Node.js is installed automatically if not present (Homebrew → nvm on macOS, apt/dnf → nvm on Linux).
 - **SessionStart budget check:** `scripts/check-budget.sh` runs at every session start. It captures a daily-spend baseline to `/tmp/.prx-session-start-spend` (used by Step 11 for per-session delta) and injects the current month's actual spend and budget status into Claude's session context. A system-level warning is surfaced when spend ≥ 80%.
-- **Step 11 / R7 / E8 — actual costs:** Instead of estimating tokens from content volume, Claude now runs `npx ccusage@latest daily --json` and subtracts the session-start baseline to report the exact cost of the current session. Manual estimation is retained as a fallback when Node.js is unavailable.
-- **Step 14 / R10 / E8 (Bryan) — actual monthly spend:** Bryan now runs `npx ccusage@latest monthly --json` to get the authoritative monthly figure instead of summing cost fields from `process-efficiency.md` session records. Falls back to the manual sum if ccusage is unavailable.
+- **Step 11 / R7 / E7 — actual costs:** Instead of estimating tokens from content volume, Claude now runs `npx ccusage@latest daily --json` and subtracts the session-start baseline to report the exact cost of the current session. Manual estimation is retained as a fallback when Node.js is unavailable.
+- **Step 14 / R10 / E7 (Bryan) — actual monthly spend:** Bryan now runs `npx ccusage@latest monthly --json` to get the authoritative monthly figure instead of summing cost fields from `process-efficiency.md` session records. Falls back to the manual sum if ccusage is unavailable.
 - **Developer confirmation gate:** Before Bryan applies any approved SKILL.md change (Step 14c) or compaction pass (Step 14d), an interactive confirmation box shows the exact before/after wording, problem solved, process impact, and estimated token saving. The developer must explicitly confirm before any file is modified. Skipped automatically in `AUTO_MODE=Y`.
 - **Permissions:** `Bash(npx --yes ccusage@latest *)` added to `.claude/settings.local.json` allowlist so the budget check runs without prompts.
 - **Setup scripts:** `scripts/setup.sh` (macOS / Linux / WSL / Git Bash) and `scripts/setup.ps1` (Windows PowerShell) auto-detect the OS and install all prerequisites in one pass — `uvx`, Node.js, pandoc, `.env` copy, and `~/.claude/settings.json` marketplace registration. `scripts/setup.cmd` provides a double-click launcher for Windows CMD users. Installation cascades through available package managers (Homebrew → nvm on macOS; apt → dnf → nvm on Linux; winget → Chocolatey → Scoop on Windows) with graceful fallback and platform-specific manual instructions on failure.
