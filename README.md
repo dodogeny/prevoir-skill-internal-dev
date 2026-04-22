@@ -1,4 +1,4 @@
-# Prevoyant — Dev Skill · Claude Code Plugin `v1.2.2`
+# Prevoyant - Claude Code Plugin `v1.2.2`
 
 **Prevoyant** is a [Claude Code](https://claude.ai/code) plugin — an AI agent team that runs a structured, end-to-end developer workflow for Jira tickets. Three modes:
 
