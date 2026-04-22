@@ -82,7 +82,7 @@ git clone https://github.com/dodogeny/prx-skill-internal-dev.git \
 git clone https://github.com/dodogeny/prx-skill-internal-dev.git "$env:USERPROFILE\.claude\plugins\marketplaces\dodogeny"
 ```
 
-Add to `~/.claude/settings.json` (create the file if it does not exist):
+Add to `~/.claude/settings.json` (or skip this — the setup script in Step 2 does it automatically):
 
 **macOS / Linux:**
 ```json
@@ -127,41 +127,26 @@ claude plugin list   # should show prx@dodogeny with ✔ enabled
 
 ---
 
-### 2. Install `uvx` (the only MCP dependency)
+### 2. Install prerequisites
 
-The Jira MCP server (`mcp-atlassian`) is **already configured** in `.mcp.json`, which is committed to this repo. You do not need to install, configure, or edit anything MCP-related — you only need `uvx`, which downloads and runs `mcp-atlassian` automatically on first use.
+Run the one-shot setup script — it auto-detects your OS and installs `uvx` (Jira MCP), `Node.js` (budget tracking), and `pandoc` (PDF reports), copies `.env.example` → `.env`, and registers the marketplace in `~/.claude/settings.json`. Safe to re-run.
 
-`uvx` is part of the `uv` Python package manager:
-
-**macOS / Linux:**
-```bash
-command -v uvx &>/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-if (-not (Get-Command uvx -ErrorAction SilentlyContinue)) {
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-}
-```
+| Environment | Command |
+|-------------|---------|
+| macOS | `bash scripts/setup.sh` |
+| Linux | `bash scripts/setup.sh` |
+| Windows — WSL | `bash scripts/setup.sh` |
+| Windows — Git Bash | `bash scripts/setup.sh` |
+| Windows — PowerShell | `.\scripts\setup.ps1` |
+| Windows — CMD / double-click | `scripts\setup.cmd` |
 
 > **How it works:** `.mcp.json` (committed, no credentials) tells Claude Code to run `uvx mcp-atlassian`. On first use `uvx` downloads the package into an isolated cache — no `pip install`, no virtual environment, no version conflicts. Credentials flow in from `.env` automatically.
 
 ---
 
-### 3. Create `.env` and fill in your values
+### 3. Fill in `.env`
 
-This is the **only file you need to edit**. Everything else — the MCP server, the skill, and the polling script — reads from it automatically.
-
-Copy `.env.example` to `.env` **in the same folder where you cloned this repo** (the project root, next to this README):
-
-```bash
-# Run this from the project root
-cd ~/.claude/plugins/marketplaces/dodogeny   # or wherever you cloned the repo
-cp .env.example .env
-```
-
-Open `.env` and set the three required values:
+The setup script copied `.env.example` → `.env` for you. Open `.env` and set the three required values:
 
 ```bash
 # Path to your local repository clone
@@ -269,16 +254,20 @@ Set `PRX_EMAIL_TO` to enable. Leave it unset to disable email entirely.
 
 ## Prerequisites
 
+Run the setup script — it auto-detects your OS and handles everything below. Manual commands are listed here as a fallback only.
+
 ### PDF Generation
 
 The skill generates reports via pandoc → Chrome headless → HTML fallback (tried in order, first success wins).
 
 **pandoc (best output quality):**
-```bash
-brew install pandoc       # macOS
-apt install pandoc        # Linux
-# Windows: https://pandoc.org/installing.html
-```
+
+| Platform | Command |
+|----------|---------|
+| macOS | `brew install pandoc` |
+| Linux | `sudo apt install pandoc` / `sudo dnf install pandoc` |
+| Windows | `winget install JohnMacFarlane.Pandoc` |
+| Manual | [pandoc.org/installing.html](https://pandoc.org/installing.html) |
 
 **Chrome headless:** no setup needed if Chrome is already installed.
 
@@ -288,17 +277,20 @@ apt install pandoc        # Linux
 
 `npx` (bundled with Node.js) runs [ccusage](https://www.npmjs.com/package/ccusage) to measure actual Claude token spend. **ccusage is downloaded automatically on first use** — no `npm install` needed. Node.js itself must be present.
 
-**macOS:** `brew install node` or download from [nodejs.org](https://nodejs.org)
-
-**Linux (Ubuntu/Debian):**
-```bash
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt install -y nodejs
-```
-
-**Windows:** Download from [nodejs.org](https://nodejs.org)
+| Platform | Command |
+|----------|---------|
+| macOS | `brew install node` or [nodejs.org](https://nodejs.org) |
+| Linux | `curl -fsSL https://deb.nodesource.com/setup_lts.x \| sudo -E bash - && sudo apt install -y nodejs` |
+| Windows | `winget install OpenJS.NodeJS.LTS` or [nodejs.org](https://nodejs.org) |
 
 > If Node.js is not installed, budget tracking is silently skipped and the skill falls back to manual token estimation. No other functionality is affected.
+
+### uvx (Jira MCP)
+
+| Platform | Command |
+|----------|---------|
+| macOS / Linux | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Windows | `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"` |
 
 ### Git
 The repository at `REPO_DIR` must be present locally. The skill creates branches there.
@@ -526,6 +518,9 @@ Story points = **Complexity + Risk + Repetition** (not hours). Scale: 1 · 2 · 
 │   └── skills/dev/
 │       └── SKILL.md              # All skill logic lives here
 ├── scripts/
+│   ├── setup.sh                  # One-shot prerequisite installer (macOS / Linux / WSL / Git Bash)
+│   ├── setup.ps1                 # One-shot prerequisite installer (Windows — PowerShell)
+│   ├── setup.cmd                 # One-shot prerequisite installer (Windows — CMD / double-click)
 │   ├── check-budget.sh           # SessionStart hook: ccusage monthly budget check + session baseline capture
 │   ├── poll-jira.sh              # Jira polling script (macOS / Linux / Windows WSL)
 │   ├── com.dev-skill.poll-jira.plist  # macOS launchd schedule template
