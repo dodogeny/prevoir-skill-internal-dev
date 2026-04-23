@@ -3,7 +3,7 @@
 const express = require('express');
 const config = require('./config/env');
 const jiraWebhook = require('./webhooks/jira');
-const dashboardRoutes = require('./stats/routes');
+const dashboardRoutes = require('./dashboard/routes');
 const { schedulePollScript } = require('./runner/pollScheduler');
 
 const app = express();

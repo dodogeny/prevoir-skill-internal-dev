@@ -4,7 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const config = require('../config/env');
 const jobQueue = require('../queue/jobQueue');
-const tracker = require('../stats/tracker');
+const tracker = require('../dashboard/tracker');
 
 const router = express.Router();
 

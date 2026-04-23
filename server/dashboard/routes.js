@@ -4,6 +4,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { getStats, getTicket, reRunTicket } = require('./tracker');
+const { killJob } = require('../queue/jobQueue');
 const { enqueue } = require('../queue/jobQueue');
 
 const VALID_MODES = new Set(['dev', 'review', 'estimate']);
@@ -238,7 +239,17 @@ function renderDashboard(stats) {
       <td style="font-size:0.82rem;color:#555">${fmt(t.completedAt)}</td>
       <td style="font-size:0.82rem;color:#555">${dur(t.startedAt, t.completedAt)}</td>
       <td>${reportCell(t.reportFiles)}</td>
-      <td>${playBtn}</td>
+      <td style="display:flex;align-items:center;gap:6px">
+        ${playBtn}
+        ${isRunning ? `
+        <form method="POST" action="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}/stop"
+              style="display:inline" onsubmit="return confirm('Stop this job?')">
+          <button type="submit" class="stop-btn" title="Stop this job">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+                 fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          </button>
+        </form>` : ''}
+      </td>
     </tr>`;
   }).join('');
 
@@ -280,6 +291,9 @@ function renderDashboard(stats) {
                 background:#16a34a; color:#fff; border:none; border-radius:6px; cursor:pointer; transition:background .15s; }
     .play-btn:hover:not([disabled]) { background:#15803d; }
     .play-btn[disabled] { background:#d1d5db; color:#9ca3af; cursor:not-allowed; }
+    .stop-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;
+                background:#dc2626; color:#fff; border:none; border-radius:6px; cursor:pointer; transition:background .15s; }
+    .stop-btn:hover { background:#b91c1c; }
   </style>
 </head>
 <body>
@@ -496,6 +510,9 @@ function renderDetail(ticket, warn, warnMode) {
                   cursor:pointer; transition:background .15s; }
     .run-submit:hover { background:#15803d; }
     .run-submit:disabled { background:#d1d5db; color:#9ca3af; cursor:not-allowed; }
+    .stop-submit { display:inline-flex; align-items:center; gap:6px; padding:8px 20px; background:#dc2626;
+                   color:#fff; border:none; border-radius:8px; font-size:0.82rem; font-weight:500; cursor:pointer; transition:background .15s; }
+    .stop-submit:hover { background:#b91c1c; }
   </style>
 </head>
 <body>
@@ -619,9 +636,15 @@ function renderDetail(ticket, warn, warnMode) {
                  fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             ${ticket.status === 'running' ? 'Running…' : ticket.status === 'queued' ? 'Queued…' : 'Run'}
           </button>
-          ${ticket.status === 'running' || ticket.status === 'queued'
-            ? '<span style="font-size:0.78rem;color:#6b7280">Job already in progress — wait for it to finish before re-running.</span>'
-            : ''}
+          ${ticket.status === 'running' || ticket.status === 'queued' ? `
+          <form method="POST" action="/dashboard/ticket/${encodeURIComponent(ticket.ticketKey)}/stop"
+                style="display:inline" onsubmit="return confirm('Stop this job?')">
+            <button type="submit" class="stop-submit">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                   fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Stop Job
+            </button>
+          </form>` : ''}
         </form>
       </div>
     </div>
@@ -817,6 +840,13 @@ router.post('/ticket/:key/run', express.urlencoded({ extended: false }), (req, r
 
   reRunTicket(ticketKey, mode, 'manual');
   enqueue(ticketKey, mode);
+  res.redirect(303, `/dashboard/ticket/${encodeURIComponent(ticketKey)}`);
+});
+
+// Stop a running or queued job
+router.post('/ticket/:key/stop', (req, res) => {
+  const ticketKey = req.params.key.toUpperCase();
+  killJob(ticketKey);
   res.redirect(303, `/dashboard/ticket/${encodeURIComponent(ticketKey)}`);
 });
 

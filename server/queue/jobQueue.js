@@ -1,7 +1,7 @@
 'use strict';
 
-const { runClaudeAnalysis } = require('../runner/claudeRunner');
-const tracker = require('../stats/tracker');
+const { runClaudeAnalysis, killProcess } = require('../runner/claudeRunner');
+const tracker = require('../dashboard/tracker');
 
 const MAX_CONCURRENT = 1; // run one analysis at a time to avoid resource exhaustion
 const queue = [];
@@ -26,8 +26,13 @@ function drain() {
         console.log(`[queue] ${ticket} complete`);
       })
       .catch(err => {
-        tracker.recordCompleted(ticket, false);
-        console.error(`[queue] ${ticket} failed: ${err.message}`);
+        if (err.killed) {
+          tracker.recordInterrupted(ticket);
+          console.log(`[queue] ${ticket} stopped by user`);
+        } else {
+          tracker.recordCompleted(ticket, false);
+          console.error(`[queue] ${ticket} failed: ${err.message}`);
+        }
       })
       .finally(() => {
         running--;
@@ -36,4 +41,17 @@ function drain() {
   }
 }
 
-module.exports = { enqueue };
+function killJob(ticketKey) {
+  // If still waiting in queue, remove it immediately
+  const idx = queue.findIndex(j => j.ticketKey === ticketKey);
+  if (idx !== -1) {
+    queue.splice(idx, 1);
+    tracker.recordInterrupted(ticketKey);
+    console.log(`[queue] ${ticketKey} removed from queue by user`);
+    return true;
+  }
+  // If actively running, send kill signal — recordInterrupted called via .catch()
+  return killProcess(ticketKey);
+}
+
+module.exports = { enqueue, killJob };

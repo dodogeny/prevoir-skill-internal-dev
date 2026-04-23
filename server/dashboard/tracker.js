@@ -10,50 +10,13 @@ const serverStartedAt = new Date();
 const tickets = new Map();
 
 // ── Stage definitions ─────────────────────────────────────────────────────────
+// Edit server/dashboard/stages.json to add, remove, or rename pipeline stages.
+// IDs must match what Claude announces in output ("Step X —") to be tracked as active.
 
-const DEV_STAGES = [
-  { id: '0',  label: 'KB Sync & Query' },
-  { id: '1',  label: 'Read Ticket' },
-  { id: '2',  label: 'Understand Problem' },
-  { id: '3',  label: 'Read Comments' },
-  { id: '4',  label: 'Create Branch' },
-  { id: '5',  label: 'Locate Code' },
-  { id: '6',  label: 'Replicate Issue' },
-  { id: '7',  label: 'Root Cause Analysis' },
-  { id: '8',  label: 'Propose Fix' },
-  { id: '9',  label: 'Impact Analysis' },
-  { id: '10', label: 'Change Summary' },
-  { id: '11', label: 'Session Stats' },
-  { id: '12', label: 'Generate PDF' },
-  { id: '13', label: 'Record Learnings' },
-  { id: '14', label: "Bryan's Retrospective" },
-];
-
-const REVIEW_STAGES = [
-  { id: 'R0',  label: 'KB Sync & Query' },
-  { id: 'R1',  label: 'Read Ticket' },
-  { id: 'R2',  label: 'Understand Problem' },
-  { id: 'R3',  label: 'Read Comments' },
-  { id: 'R4',  label: 'Fetch Code Changes' },
-  { id: 'R5',  label: 'Engineering Panel' },
-  { id: 'R6',  label: 'Consolidated Report' },
-  { id: 'R7',  label: 'Session Stats' },
-  { id: 'R8',  label: 'Generate PDF' },
-  { id: 'R9',  label: 'Record Learnings' },
-  { id: 'R10', label: "Bryan's Retrospective" },
-];
-
-const ESTIMATE_STAGES = [
-  { id: 'E0',  label: 'KB Sync & Query' },
-  { id: 'E1',  label: 'Ingest Ticket' },
-  { id: 'E2',  label: 'Scope & Dimensions' },
-  { id: 'E3',  label: 'Planning Poker R1' },
-  { id: 'E4',  label: 'Debate & Consensus' },
-  { id: 'E5',  label: 'Final Estimate' },
-  { id: 'E5b', label: 'Generate PDF' },
-  { id: 'E6',  label: 'KB Update' },
-  { id: 'E7',  label: "Bryan's Retrospective" },
-];
+const _stages = require('./stages.json');
+const DEV_STAGES      = _stages.dev;
+const REVIEW_STAGES   = _stages.review;
+const ESTIMATE_STAGES = _stages.estimate;
 
 function makeStagePipeline(stageList) {
   return stageList.map(s => ({ id: s.id, label: s.label, status: 'pending', startedAt: null, completedAt: null }));
@@ -199,6 +162,19 @@ function recordCompleted(ticketKey, success) {
   saveSession(ticketKey);
 }
 
+function recordInterrupted(ticketKey) {
+  const entry = tickets.get(ticketKey);
+  if (!entry) return;
+  const now = new Date();
+  const stages = (entry.stages || []).map(s => {
+    if (s.status === 'active')  return { ...s, status: 'failed', completedAt: now };
+    if (s.status === 'pending') return { ...s, status: 'skipped' };
+    return s;
+  });
+  tickets.set(ticketKey, { ...entry, completedAt: now, status: 'interrupted', stages });
+  saveSession(ticketKey);
+}
+
 // ── Stage tracking ────────────────────────────────────────────────────────────
 
 const OUTPUT_CAP = 2000;
@@ -304,7 +280,7 @@ function getTicket(ticketKey) {
 loadSessions();
 
 module.exports = {
-  recordQueued, reRunTicket, recordStarted, recordCompleted,
+  recordQueued, reRunTicket, recordStarted, recordCompleted, recordInterrupted,
   recordStepActive, appendOutput,
   getStats, getTicket,
 };

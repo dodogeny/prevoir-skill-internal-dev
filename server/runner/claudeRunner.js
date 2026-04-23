@@ -5,7 +5,8 @@ const fs          = require('fs');
 const os          = require('os');
 const path        = require('path');
 const config      = require('../config/env');
-const tracker     = require('../stats/tracker');
+const tracker     = require('../dashboard/tracker');
+const stages      = require('../dashboard/stages.json');
 
 // Build a temp MCP config that uses mcp-atlassian with API-token auth.
 // When JIRA_URL + JIRA_USERNAME + JIRA_API_TOKEN are present in the env block,
@@ -40,10 +41,46 @@ function detectStep(text) {
   return match ? match[1] : null;
 }
 
+// Loads instruction markdown files from server/dashboard/stage-instructions/<id>.md.
+// To define instructions for a new stage, create a file named <stageId>.md in that directory.
+// Files are only injected if the stage ID exists in stages.json for the current mode.
+const STAGE_INSTRUCTIONS_DIR = path.join(__dirname, '../dashboard/stage-instructions');
+
+function loadStageInstructions(list) {
+  let files;
+  try { files = fs.readdirSync(STAGE_INSTRUCTIONS_DIR); } catch (_) { return ''; }
+
+  const stageIds = new Set(list.map(s => s.id));
+  const blocks = files
+    .filter(f => f.endsWith('.md'))
+    .map(f => {
+      const id = f.slice(0, -3);
+      if (!stageIds.has(id)) return null;
+      const content = fs.readFileSync(path.join(STAGE_INSTRUCTIONS_DIR, f), 'utf8').trim();
+      const stage = list.find(s => s.id === id);
+      return `### Step ${id} — ${stage.label}\n\n${content}`;
+    })
+    .filter(Boolean);
+
+  return blocks.length
+    ? `\n\nAdditional step instructions (from stage-instructions/, supplement SKILL.md):\n\n${blocks.join('\n\n---\n\n')}`
+    : '';
+}
+
+function stageSequenceHint(mode) {
+  const list = mode === 'review'   ? stages.review
+             : mode === 'estimate' ? stages.estimate
+             : stages.dev;
+  const seq = list.map(s => `Step ${s.id} — ${s.label}`).join(' → ');
+  return `\n\nPrevoyant pipeline stages for this ${mode} session (announce each on its own line as ### Step N — {label}):\n${seq}`
+    + loadStageInstructions(list);
+}
+
 function modePrompt(ticketKey, mode) {
-  if (mode === 'review')   return `/prx:dev review ${ticketKey}`;
-  if (mode === 'estimate') return `/prx:dev estimate ${ticketKey}`;
-  return `/prx:dev ${ticketKey}`;
+  const base = mode === 'review'   ? `/prx:dev review ${ticketKey}`
+             : mode === 'estimate' ? `/prx:dev estimate ${ticketKey}`
+             : `/prx:dev ${ticketKey}`;
+  return base + stageSequenceHint(mode);
 }
 
 function reportAlreadyExists(ticketKey, mode) {
@@ -94,6 +131,18 @@ function processLine(ticketKey, line) {
   // Intentionally drop type: 'user' / 'system' — these are raw tool payloads, not readable output
 }
 
+// ticketKey → { proc, killed } — lets killProcess() find and terminate the child
+const activeProcesses = new Map();
+
+function killProcess(ticketKey) {
+  const entry = activeProcesses.get(ticketKey);
+  if (!entry) return false;
+  entry.killed = true;
+  entry.proc.kill('SIGTERM');
+  setTimeout(() => { try { entry.proc.kill('SIGKILL'); } catch (_) {} }, 3000);
+  return true;
+}
+
 function runClaudeAnalysis(ticketKey, mode = 'dev') {
   return new Promise((resolve, reject) => {
     console.log(`[runner] Spawning claude for ${ticketKey} (mode: ${mode})`);
@@ -124,6 +173,9 @@ function runClaudeAnalysis(ticketKey, mode = 'dev') {
       }
     );
 
+    const state = { proc, killed: false };
+    activeProcesses.set(ticketKey, state);
+
     // Line buffer — stdout arrives in 64 KB chunks; large JSON events span multiple chunks.
     // Accumulate bytes until we have a complete newline-terminated line before parsing.
     let lineBuf = '';
@@ -143,9 +195,11 @@ function runClaudeAnalysis(ticketKey, mode = 'dev') {
     });
 
     proc.on('close', code => {
+      activeProcesses.delete(ticketKey);
       if (lineBuf.trim()) processLine(ticketKey, lineBuf); // flush any partial line
       if (usingTempConfig) try { fs.unlinkSync(mcpConfig); } catch (_) {}
-      if (code === 0) resolve();
+      if (state.killed) reject(Object.assign(new Error('Process killed by user'), { killed: true }));
+      else if (code === 0) resolve();
       else reject(new Error(`claude exited with code ${code}`));
     });
 
@@ -153,4 +207,4 @@ function runClaudeAnalysis(ticketKey, mode = 'dev') {
   });
 }
 
-module.exports = { runClaudeAnalysis };
+module.exports = { runClaudeAnalysis, killProcess };

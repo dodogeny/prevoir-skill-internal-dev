@@ -1,0 +1,43 @@
+{
+  "dev": [
+    { "id": "0",  "label": "KB Sync & Query" },
+    { "id": "1",  "label": "Read Ticket" },
+    { "id": "2",  "label": "Understand Problem" },
+    { "id": "3",  "label": "Read Comments" },
+    { "id": "4",  "label": "Create Branch" },
+    { "id": "5",  "label": "Locate Code" },
+    { "id": "6",  "label": "Replicate Issue" },
+    { "id": "7",  "label": "Root Cause Analysis" },
+    { "id": "8",  "label": "Propose Fix" },
+    { "id": "9",  "label": "Impact Analysis" },
+    { "id": "10", "label": "Change Summary" },
+    { "id": "11", "label": "Session Stats" },
+    { "id": "12", "label": "Generate PDF" },
+    { "id": "13", "label": "Record Learnings" },
+    { "id": "14", "label": "Bryan's Retrospective" }
+  ],
+  "review": [
+    { "id": "R0",  "label": "KB Sync & Query" },
+    { "id": "R1",  "label": "Read Ticket" },
+    { "id": "R2",  "label": "Understand Problem" },
+    { "id": "R3",  "label": "Read Comments" },
+    { "id": "R4",  "label": "Fetch Code Changes" },
+    { "id": "R5",  "label": "Engineering Panel" },
+    { "id": "R6",  "label": "Consolidated Report" },
+    { "id": "R7",  "label": "Session Stats" },
+    { "id": "R8",  "label": "Generate PDF" },
+    { "id": "R9",  "label": "Record Learnings" },
+    { "id": "R10", "label": "Bryan's Retrospective" }
+  ],
+  "estimate": [
+    { "id": "E0",  "label": "KB Sync & Query" },
+    { "id": "E1",  "label": "Ingest Ticket" },
+    { "id": "E2",  "label": "Scope & Dimensions" },
+    { "id": "E3",  "label": "Planning Poker R1" },
+    { "id": "E4",  "label": "Debate & Consensus" },
+    { "id": "E5",  "label": "Final Estimate" },
+    { "id": "E5b", "label": "Generate PDF" },
+    { "id": "E6",  "label": "KB Update" },
+    { "id": "E7",  "label": "Bryan's Retrospective" }
+  ]
+}
