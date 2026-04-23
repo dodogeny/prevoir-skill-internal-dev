@@ -2842,9 +2842,12 @@ Resolve the output folder using this priority order:
 ```bash
 REPORT_DIR="${CLAUDE_REPORT_DIR:-$HOME/.prevoyant/reports}"
 mkdir -p "$REPORT_DIR"
+REPORT_SUFFIX="${CLAUDE_REPORT_SUFFIX:-}"
+REPORT_BASE="{TICKET_KEY}-analysis"
+[ -n "$REPORT_SUFFIX" ] && REPORT_BASE="${REPORT_BASE}-${REPORT_SUFFIX}"
 ```
 
-> **Filename rule:** The output file **must** be named exactly `{TICKET_KEY}-analysis.pdf` (or `-review.pdf` in PR Review mode). Do **not** append dates, timestamps, sequence numbers, or any other suffix. The Prevoyant Server dashboard locates reports by this exact name pattern; any deviation makes the report invisible to the dashboard.
+> **Filename rule:** The base output name is `{TICKET_KEY}-analysis` (or `-review` in PR Review mode). When `CLAUDE_REPORT_SUFFIX` is set (injected by Prevoyant Server when replaying a ticket that already has a report), append it: e.g. `{TICKET_KEY}-analysis-20260423-112530`. Use `$REPORT_BASE` for all output paths. The dashboard scans for any file matching `{TICKET_KEY}-*.(pdf|html)` so every version remains visible.
 
 **PDF tool pre-check** — before generating Markdown, verify which conversion method is available and report it upfront rather than discovering failures at conversion time:
 
@@ -3184,7 +3187,7 @@ where pandoc        # Windows
 If available, convert directly from Markdown to PDF:
 ```bash
 pandoc /tmp/{TICKET_KEY}-analysis.md \
-  -o "{REPORT_DIR}/{TICKET_KEY}-analysis.pdf" \
+  -o "${REPORT_DIR}/${REPORT_BASE}.pdf" \
   --pdf-engine=wkhtmltopdf \
   -V geometry:margin=2cm \
   -V fontsize=11pt
@@ -3240,18 +3243,18 @@ Then print to PDF using Chrome headless:
 # macOS
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless --no-sandbox --disable-gpu \
-  --print-to-pdf="{REPORT_DIR}/{TICKET_KEY}-analysis.pdf" \
+  --print-to-pdf="${REPORT_DIR}/${REPORT_BASE}.pdf" \
   "file:///tmp/{TICKET_KEY}-analysis.html"
 
 # Linux
 google-chrome --headless --no-sandbox --disable-gpu \
-  --print-to-pdf="{REPORT_DIR}/{TICKET_KEY}-analysis.pdf" \
+  --print-to-pdf="${REPORT_DIR}/${REPORT_BASE}.pdf" \
   "file:///tmp/{TICKET_KEY}-analysis.html"
 
 # Windows (PowerShell)
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
   --headless --disable-gpu `
-  --print-to-pdf="{REPORT_DIR}\{TICKET_KEY}-analysis.pdf" `
+  --print-to-pdf="${REPORT_DIR}\${REPORT_BASE}.pdf" `
   "file:///C:/Users/$env:USERNAME/AppData/Local/Temp/{TICKET_KEY}-analysis.html"
 ```
 
@@ -3259,7 +3262,7 @@ google-chrome --headless --no-sandbox --disable-gpu \
 
 Save the styled HTML file produced in Method 2 directly to the report folder:
 ```bash
-cp /tmp/{TICKET_KEY}-analysis.html "{REPORT_DIR}/{TICKET_KEY}-analysis.html"
+cp /tmp/{TICKET_KEY}-analysis.html "${REPORT_DIR}/${REPORT_BASE}.html"
 ```
 
 Inform the developer:
@@ -3272,7 +3275,7 @@ After saving, display the following to the developer (always show both the folde
 ```
 📄 Analysis Report Generated
    Folder : {REPORT_DIR}/
-   File   : {REPORT_DIR}/{TICKET_KEY}-analysis.pdf
+   File   : ${REPORT_DIR}/${REPORT_BASE}.pdf
    Format : PDF  ← (or "HTML (PDF libraries unavailable)" if Method 3 was used)
 ```
 
@@ -3285,10 +3288,10 @@ Resolve the path to `send-report.py` relative to this skill file. The script liv
 ```bash
 # macOS / Linux
 python3 "$(dirname "$(dirname "$(dirname "$0")")")/scripts/send-report.py" \
-  "{TICKET_KEY}" "{REPORT_DIR}/{TICKET_KEY}-analysis.pdf" "PDF"
+  "{TICKET_KEY}" "${REPORT_DIR}/${REPORT_BASE}.pdf" "PDF"
 
 # Windows (PowerShell) — use the absolute path resolved at Step 0
-python scripts\send-report.py "{TICKET_KEY}" "{REPORT_DIR}\{TICKET_KEY}-analysis.pdf" "PDF"
+python scripts\send-report.py "{TICKET_KEY}" "${REPORT_DIR}\${REPORT_BASE}.pdf" "PDF"
 ```
 
 If the report was saved as HTML (Method 3 fallback), pass `"HTML"` as the third argument and the `.html` path instead.
@@ -4380,6 +4383,9 @@ Same as Step 12a in Dev Mode:
 ```bash
 REPORT_DIR="${CLAUDE_REPORT_DIR:-$HOME/.prevoyant/reports}"
 mkdir -p "$REPORT_DIR"
+REPORT_SUFFIX="${CLAUDE_REPORT_SUFFIX:-}"
+REPORT_BASE="{TICKET_KEY}-review"
+[ -n "$REPORT_SUFFIX" ] && REPORT_BASE="${REPORT_BASE}-${REPORT_SUFFIX}"
 ```
 
 #### R8b. Generate Markdown Source
@@ -4533,11 +4539,11 @@ Write `/tmp/{TICKET_KEY}-review.md`. Reproduce every step's full output — no s
 
 #### R8c. Convert to PDF
 
-Same three-method sequence as Step 12c in Dev Mode (pandoc → Chrome headless → HTML fallback). Use filename `{TICKET_KEY}-review` instead of `{TICKET_KEY}-analysis`:
+Same three-method sequence as Step 12c in Dev Mode (pandoc → Chrome headless → HTML fallback). Use `$REPORT_BASE` (already set to `{TICKET_KEY}-review` or `{TICKET_KEY}-review-{SUFFIX}`) for all output paths:
 
 ```bash
 pandoc /tmp/{TICKET_KEY}-review.md \
-  -o "{REPORT_DIR}/{TICKET_KEY}-review.pdf" \
+  -o "${REPORT_DIR}/${REPORT_BASE}.pdf" \
   --pdf-engine=wkhtmltopdf \
   -V geometry:margin=2cm \
   -V fontsize=11pt
@@ -4548,7 +4554,7 @@ pandoc /tmp/{TICKET_KEY}-review.md \
 ```
 📄 Review Report Generated
    Folder : {REPORT_DIR}/
-   File   : {REPORT_DIR}/{TICKET_KEY}-review.pdf
+   File   : ${REPORT_DIR}/${REPORT_BASE}.pdf
    Format : PDF  ← (or "HTML (PDF libraries unavailable)" if fallback used)
    Verdict: {✅ APPROVED / ⚠️ APPROVED WITH CONDITIONS / 🔄 REQUEST CHANGES / ❌ REJECT}
    Issues : Critical: {N}  Major: {N}  Minor: {N}
@@ -4562,7 +4568,7 @@ rm -f /tmp/{TICKET_KEY}-review.md /tmp/{TICKET_KEY}-review.html
 
 Then end with:
 
-> **Review complete.** See `{REPORT_DIR}/{TICKET_KEY}-review.pdf` for the full findings. {If REQUEST CHANGES or REJECT: "Share the report with the developer and request re-review after issues are addressed."}
+> **Review complete.** See `${REPORT_DIR}/${REPORT_BASE}.pdf` for the full findings. {If REQUEST CHANGES or REJECT: "Share the report with the developer and request re-review after issues are addressed."}
 
 ---
 

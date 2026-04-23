@@ -47,12 +47,39 @@ function modePrompt(ticketKey, mode) {
   return `/prx:dev ${ticketKey}`;
 }
 
+function reportAlreadyExists(ticketKey, mode) {
+  const reportsDir = process.env.CLAUDE_REPORT_DIR
+    || path.join(os.homedir(), '.prevoyant', 'reports');
+  const suffix = mode === 'review' ? 'review' : 'analysis';
+  const candidate = path.join(reportsDir, `${ticketKey}-${suffix}.pdf`);
+  try { fs.accessSync(candidate); return true; } catch (_) { return false; }
+}
+
+function datetimeSuffix() {
+  const d = new Date();
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('') + '-' + [
+    String(d.getHours()).padStart(2, '0'),
+    String(d.getMinutes()).padStart(2, '0'),
+    String(d.getSeconds()).padStart(2, '0'),
+  ].join('');
+}
+
 function runClaudeAnalysis(ticketKey, mode = 'dev') {
   return new Promise((resolve, reject) => {
     console.log(`[runner] Spawning claude for ${ticketKey} (mode: ${mode})`);
 
     const mcpConfig = buildMcpConfig();
     const usingTempConfig = mcpConfig !== config.mcpConfigFile;
+
+    const childEnv = { ...process.env, AUTO_MODE: 'true' };
+    if (reportAlreadyExists(ticketKey, mode)) {
+      childEnv.CLAUDE_REPORT_SUFFIX = datetimeSuffix();
+      console.log(`[runner] Existing report found for ${ticketKey} — will use suffix ${childEnv.CLAUDE_REPORT_SUFFIX}`);
+    }
 
     const proc = spawn(
       'claude',
@@ -65,7 +92,7 @@ function runClaudeAnalysis(ticketKey, mode = 'dev') {
       ],
       {
         cwd: config.projectRoot,
-        env: { ...process.env, AUTO_MODE: 'true' },
+        env: childEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
