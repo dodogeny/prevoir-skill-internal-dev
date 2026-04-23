@@ -30,6 +30,7 @@ function runClaudeAnalysis(ticketKey, mode = 'dev') {
         '--print', modePrompt(ticketKey, mode),
         '--mcp-config', config.mcpConfigFile,
         '--output-format', 'stream-json',
+        '--verbose',
       ],
       {
         cwd: config.projectRoot,
