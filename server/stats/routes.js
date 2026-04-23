@@ -8,6 +8,28 @@ const { enqueue } = require('../queue/jobQueue');
 
 const VALID_MODES = new Set(['dev', 'review', 'estimate']);
 
+const config = require('../config/env');
+
+function isInSeenCache(ticketKey) {
+  try {
+    return fs.readFileSync(config.seenCacheFile, 'utf8')
+      .split('\n')
+      .some(l => l.trim() === ticketKey);
+  } catch (_) {
+    return false;
+  }
+}
+
+function removeFromSeenCache(ticketKey) {
+  try {
+    const lines = fs.readFileSync(config.seenCacheFile, 'utf8').split('\n');
+    fs.writeFileSync(
+      config.seenCacheFile,
+      lines.filter(l => l.trim() !== ticketKey).join('\n')
+    );
+  } catch (_) { /* file missing — nothing to remove */ }
+}
+
 const router = express.Router();
 
 // Plugin version — read once at startup
@@ -262,7 +284,7 @@ function stagePipelineHtml(stages) {
   return `<div class="pipeline-scroll"><div class="pipeline-row">${cards}</div></div>`;
 }
 
-function renderDetail(ticket) {
+function renderDetail(ticket, warn, warnMode) {
   const stages = ticket.stages || [];
   const outputLines = ticket.outputLog || [];
   const reportFiles = ticket.reportFiles || [];
@@ -341,6 +363,19 @@ function renderDetail(ticket) {
     .dl-btn { display:inline-flex; align-items:center; gap:4px; padding:5px 12px; background:#1a1a2e;
               color:#fff; border-radius:8px; font-size:0.8rem; text-decoration:none; font-weight:500; transition:background .15s; }
     .dl-btn:hover { background:#2d3a5e; }
+    .warn-banner { background:#fffbeb; border:1.5px solid #f59e0b; border-radius:10px;
+                   padding:1rem 1.25rem; margin-bottom:1.25rem; }
+    .warn-banner h3 { font-size:0.88rem; font-weight:700; color:#92400e; margin-bottom:.5rem;
+                      display:flex; align-items:center; gap:.4rem; }
+    .warn-banner p  { font-size:0.82rem; color:#78350f; margin-bottom:.5rem; line-height:1.5; }
+    .warn-banner code { background:#fef3c7; padding:2px 6px; border-radius:4px; font-family:monospace;
+                        font-size:0.8rem; color:#92400e; word-break:break-all; }
+    .warn-banner ol { font-size:0.82rem; color:#78350f; padding-left:1.3rem; line-height:1.8; }
+    .warn-banner .warn-actions { display:flex; align-items:center; gap:.75rem; margin-top:.9rem; flex-wrap:wrap; }
+    .force-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 18px; background:#d97706;
+                 color:#fff; border:none; border-radius:8px; font-size:0.82rem; font-weight:600;
+                 cursor:pointer; transition:background .15s; }
+    .force-btn:hover { background:#b45309; }
     .run-panel { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
     .run-panel label { font-size:0.82rem; color:#555; font-weight:500; }
     .mode-btn-group { display:flex; gap:.4rem; }
@@ -384,6 +419,47 @@ function renderDetail(ticket) {
         </div>
       </div>
     </div>
+
+    ${warn === 'seen' ? (() => {
+      const safeKey = ticket.ticketKey.replace(/[^A-Za-z0-9_-]/g, '');
+      const chosenMode = warnMode || ticket.mode || 'dev';
+      const seenFile   = config.seenCacheFile;
+      return `
+    <div class="warn-banner">
+      <h3>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="#d97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        Ticket is in the seen-tickets cache
+      </h3>
+      <p><strong>${safeKey}</strong> is recorded in <code>${seenFile}</code>.
+        The polling script skips tickets already in this file, so re-running from the dashboard
+        will still work — but if you also want <code>poll-jira.sh</code> to pick it up again automatically,
+        you need to remove it from the cache first.</p>
+      <ol>
+        <li>Remove just this ticket:<br>
+            <code>sed -i '' '/^${safeKey}$/d' "${seenFile}"</code></li>
+        <li>Or clear the entire cache (all tickets will be re-evaluated on next poll):<br>
+            <code>truncate -s 0 "${seenFile}"</code></li>
+      </ol>
+      <div class="warn-actions">
+        <form method="POST" action="/dashboard/ticket/${encodeURIComponent(ticket.ticketKey)}/run">
+          <input type="hidden" name="mode"  value="${chosenMode}">
+          <input type="hidden" name="force" value="1">
+          <button type="submit" class="force-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                 fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Force Run &amp; remove from cache
+          </button>
+        </form>
+        <span style="font-size:0.78rem;color:#92400e">
+          This removes <strong>${safeKey}</strong> from the seen-tickets file and starts the job now.
+        </span>
+      </div>
+    </div>`;
+    })() : ''}
 
     <!-- Pipeline -->
     <div class="panel">
@@ -485,7 +561,7 @@ router.get('/ticket/:key', (req, res) => {
   const ticket = getTicket(req.params.key);
   if (!ticket) return res.status(404).send('Ticket not found.');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(renderDetail(ticket));
+  res.send(renderDetail(ticket, req.query.warn, req.query.mode));
 });
 
 // Secure inline view (for PDF iframe embedding)
@@ -505,7 +581,8 @@ router.get('/view', (req, res) => {
 // Run / re-run a ticket
 router.post('/ticket/:key/run', express.urlencoded({ extended: false }), (req, res) => {
   const ticketKey = req.params.key.toUpperCase();
-  const mode = (req.body.mode || 'dev').toLowerCase();
+  const mode  = (req.body.mode  || 'dev').toLowerCase();
+  const force = req.body.force === '1';
 
   if (!VALID_MODES.has(mode)) return res.status(400).send('Invalid mode.');
 
@@ -513,6 +590,13 @@ router.post('/ticket/:key/run', express.urlencoded({ extended: false }), (req, r
   if (existing && (existing.status === 'running' || existing.status === 'queued')) {
     return res.status(409).send('Job already in progress.');
   }
+
+  if (!force && isInSeenCache(ticketKey)) {
+    const enc = encodeURIComponent(ticketKey);
+    return res.redirect(303, `/dashboard/ticket/${enc}?warn=seen&mode=${encodeURIComponent(mode)}`);
+  }
+
+  if (force) removeFromSeenCache(ticketKey);
 
   reRunTicket(ticketKey, mode, 'manual');
   enqueue(ticketKey, mode);
