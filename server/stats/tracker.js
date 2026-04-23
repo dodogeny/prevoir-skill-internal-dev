@@ -161,6 +161,8 @@ function recordQueued(ticketKey, source = 'webhook') {
 }
 
 function reRunTicket(ticketKey, mode = 'dev', source = 'manual') {
+  // Delete stale session file before writing the fresh one
+  try { fs.unlinkSync(path.join(sessionsDir(), `${ticketKey}-session.json`)); } catch (_) {}
   tickets.set(ticketKey, {
     ticketKey, source, queuedAt: new Date(),
     startedAt: null, completedAt: null,
@@ -220,6 +222,8 @@ function appendOutput(ticketKey, text) {
   if (!entry) return;
   if (entry.outputLog.length >= OUTPUT_CAP) entry.outputLog.shift();
   entry.outputLog.push({ ts: new Date(), text });
+  // Persist every 10 entries so output survives a server restart mid-run
+  if (entry.outputLog.length % 10 === 0) saveSession(ticketKey);
 }
 
 // ── Disk scan (historical tickets) ───────────────────────────────────────────

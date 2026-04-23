@@ -5090,6 +5090,16 @@ Identical to Step 14 in Dev Mode with these differences:
 
 Present output in clearly labelled sections. Use markdown headings. Keep each section concise but complete.
 
+**Step announcements (mandatory):** You **must** output the step header on its own line as the very first thing when beginning each step, before any content. Use exactly this format:
+
+```
+### Step N — {Step Label}
+```
+
+Examples: `### Step 3 — Understand the Problem`, `### Step R5 — Engineering Panel`, `### Step E2 — Scope & Dimension Analysis`, `### Step E5b — Generate Estimate Report`.
+
+The Prevoyant Server dashboard detects these markers in real time to drive the pipeline progress display. Without them the pipeline section stays blank.
+
 **Dev Mode:** Step 0 (KB query) → Steps 1–12 → Step 13 (KB update) → Step 14 (Bryan retrospective). Step 12 produces the PDF confirmation; Step 13 produces the KB update confirmation; Step 14 closes the session.
 
 **PR Review Mode:** Step R0 (KB query) → Steps R1–R8 → Step R9 (KB update) → Step R10 (Bryan retrospective). Step R8 produces the PDF confirmation; Step R9 produces the KB update confirmation; Step R10 closes the session.
