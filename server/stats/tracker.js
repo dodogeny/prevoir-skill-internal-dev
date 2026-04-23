@@ -43,6 +43,18 @@ const REVIEW_STAGES = [
   { id: 'R10', label: "Bryan's Retrospective" },
 ];
 
+const ESTIMATE_STAGES = [
+  { id: 'E0',  label: 'KB Sync & Query' },
+  { id: 'E1',  label: 'Ingest Ticket' },
+  { id: 'E2',  label: 'Scope & Dimensions' },
+  { id: 'E3',  label: 'Planning Poker R1' },
+  { id: 'E4',  label: 'Debate & Consensus' },
+  { id: 'E5',  label: 'Final Estimate' },
+  { id: 'E5b', label: 'Generate PDF' },
+  { id: 'E6',  label: 'KB Update' },
+  { id: 'E7',  label: "Bryan's Retrospective" },
+];
+
 function makeStagePipeline(stageList) {
   return stageList.map(s => ({ id: s.id, label: s.label, status: 'pending', startedAt: null, completedAt: null }));
 }
@@ -182,11 +194,14 @@ function recordStepActive(ticketKey, stepId) {
   const entry = tickets.get(ticketKey);
   if (!entry) return;
 
-  const isReview = String(stepId).toUpperCase().startsWith('R');
+  const upper = String(stepId).toUpperCase();
+  const isReview   = upper.startsWith('R');
+  const isEstimate = upper.startsWith('E');
   let stages = entry.stages;
   if (!stages) {
-    stages = makeStagePipeline(isReview ? REVIEW_STAGES : DEV_STAGES);
-    entry.mode = isReview ? 'review' : 'dev';
+    if (isReview)        { stages = makeStagePipeline(REVIEW_STAGES);   entry.mode = 'review'; }
+    else if (isEstimate) { stages = makeStagePipeline(ESTIMATE_STAGES); entry.mode = 'estimate'; }
+    else                 { stages = makeStagePipeline(DEV_STAGES);       entry.mode = 'dev'; }
   }
 
   const normalised = String(stepId).toUpperCase();

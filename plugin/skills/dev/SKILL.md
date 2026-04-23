@@ -4938,6 +4938,111 @@ After each re-vote:
 
 ---
 
+### Step E5b — Generate Estimate Report
+
+#### E5b-a. Configuration
+
+```bash
+REPORT_DIR="${CLAUDE_REPORT_DIR:-$HOME/.prevoyant/reports}"
+mkdir -p "$REPORT_DIR"
+REPORT_SUFFIX="${CLAUDE_REPORT_SUFFIX:-}"
+REPORT_BASE="{TICKET_KEY}-estimate"
+[ -n "$REPORT_SUFFIX" ] && REPORT_BASE="${REPORT_BASE}-${REPORT_SUFFIX}"
+```
+
+> **Filename rule:** Base name is `{TICKET_KEY}-estimate`. Appends `CLAUDE_REPORT_SUFFIX` when set (injected by Prevoyant Server on replay). Use `$REPORT_BASE` for all output paths.
+
+**PDF tool pre-check** — same as Step 12a: detect `pandoc`, Chrome/Chromium, or fall back to HTML.
+
+#### E5b-b. Generate Markdown Source
+
+Write `/tmp/{TICKET_KEY}-estimate.md` with the full estimation session output:
+
+````
+# {TICKET_KEY} — Story Point Estimate
+
+| Field | Value |
+|-------|-------|
+| Date | {today's date} |
+| Analyst | Claude (Prevoyant v1.2.3) |
+| Ticket | {TICKET_KEY} — {summary} |
+| Story Points | **{N}** |
+| Confidence | {High / Medium / Low} |
+| Consensus | {Unanimous (Round N) / Morgan final call (Round N)} |
+
+---
+
+## Step E1 — Ticket Summary
+
+{Full ticket description, type, priority, status, and any relevant context from Step E1}
+
+---
+
+## Step E2 — Scope & Dimension Analysis
+
+### Complexity — {Low / Med / High}
+{Reasoning}
+
+### Risk — {Low / Med / High}
+{Reasoning}
+
+### Repetition — {Familiar / Partial / New}
+{Reasoning}
+
+---
+
+## Step E3–E4 — Planning Poker
+
+{For each round: engineer votes and brief rationale, dimension driving disagreement, debate summary}
+
+---
+
+## Step E5 — Final Estimate
+
+{Reproduce the full ESTIMATE RESULT block verbatim}
+
+### Key Assumptions
+{bullet list}
+
+### What Would Change This Estimate
+{bullet list}
+
+### Recommended Action
+{✅ Proceed / ⚠️ Spike / 🔀 Split — with details}
+````
+
+#### E5b-c. Convert to PDF
+
+Same three-method sequence as Step 12c in Dev Mode. Use `$REPORT_BASE` for all output paths:
+
+```bash
+pandoc /tmp/{TICKET_KEY}-estimate.md \
+  -o "${REPORT_DIR}/${REPORT_BASE}.pdf" \
+  --pdf-engine=wkhtmltopdf \
+  -V geometry:margin=2cm \
+  -V fontsize=11pt
+```
+
+Chrome headless and HTML fallback follow the same pattern as Step 12c — substitute `{TICKET_KEY}-estimate` for `{TICKET_KEY}-analysis` in all paths.
+
+#### E5b-d. Archive and Confirm
+
+```
+📄 Estimate Report Generated
+   Folder : {REPORT_DIR}/
+   File   : ${REPORT_DIR}/${REPORT_BASE}.pdf
+   Format : PDF  ← (or "HTML (PDF libraries unavailable)" if fallback used)
+   Points : {N} pts ({confidence}, {consensus})
+```
+
+#### E5b-e. Temp File Cleanup
+
+```bash
+rm -f /tmp/{TICKET_KEY}-estimate.md /tmp/{TICKET_KEY}-estimate.html
+```
+
+---
+
 ### Step E6 — KB Update
 
 Record the estimation session so future sessions can reference past sizing decisions for similar work.
@@ -4989,7 +5094,7 @@ Present output in clearly labelled sections. Use markdown headings. Keep each se
 
 **PR Review Mode:** Step R0 (KB query) → Steps R1–R8 → Step R9 (KB update) → Step R10 (Bryan retrospective). Step R8 produces the PDF confirmation; Step R9 produces the KB update confirmation; Step R10 closes the session.
 
-**Estimate Mode:** Step E0 (KB query) → Steps E1–E6 (scope → planning poker → debate → consensus → KB update) → Step E7 (Bryan retrospective). Step E5 produces the final estimate; Step E6 produces the KB update confirmation; Step E7 closes the session.
+**Estimate Mode:** Step E0 (KB query) → Steps E1–E5 (scope → planning poker → debate → consensus) → Step E5b (PDF report) → Step E6 (KB update) → Step E7 (Bryan retrospective). Step E5 produces the final estimate block; Step E5b produces the PDF; Step E6 produces the KB update confirmation; Step E7 closes the session.
 
 ---
 

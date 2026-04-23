@@ -32,8 +32,8 @@ function buildMcpConfig() {
   return tmp;
 }
 
-// Matches "Step 3 —", "Step R5 —", "Step 14 —" at the start of a line or after markdown markers.
-const STEP_RE = /(?:^|[*#\s])Step\s+(R?\d+)\s*[—–]/m;
+// Matches "Step 3 —", "Step R5 —", "Step E5b —", "Step 14 —" etc.
+const STEP_RE = /(?:^|[*#\s])Step\s+((?:R|E)?\d+[a-z]?)\s*[—–]/m;
 
 function detectStep(text) {
   const match = text.match(STEP_RE);
@@ -49,7 +49,7 @@ function modePrompt(ticketKey, mode) {
 function reportAlreadyExists(ticketKey, mode) {
   const reportsDir = process.env.CLAUDE_REPORT_DIR
     || path.join(os.homedir(), '.prevoyant', 'reports');
-  const suffix = mode === 'review' ? 'review' : 'analysis';
+  const suffix = mode === 'review' ? 'review' : mode === 'estimate' ? 'estimate' : 'analysis';
   const candidate = path.join(reportsDir, `${ticketKey}-${suffix}.pdf`);
   try { fs.accessSync(candidate); return true; } catch (_) { return false; }
 }
