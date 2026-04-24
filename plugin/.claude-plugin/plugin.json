@@ -1,7 +1,7 @@
 {
   "name": "prx",
   "description": "Claude Code plugin for structured Jira-driven developer workflow — dev mode and PR review mode",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "author": {
     "name": "dodogeny"
   }

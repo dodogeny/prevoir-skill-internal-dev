@@ -3,6 +3,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const config = require('../config/env');
+const activityLog = require('../dashboard/activityLog');
 
 let lastRanAt    = null;
 let nextRunAt    = null;
@@ -12,7 +13,9 @@ let fallbackRanAt = null;  // set when a one-time startup scan runs with polling
 function runPollScript(label) {
   lastRanAt = new Date();
   const scriptPath = path.join(config.scriptsDir, 'poll-jira.sh');
+  const trigger = label || 'scheduled';
   console.log(`[prevoyant-server/poll] Running poll-jira.sh${label ? ` (${label})` : ''}`);
+  activityLog.record('poll_triggered', null, 'system', { trigger });
 
   const proc = spawn('/bin/bash', [scriptPath], {
     cwd: config.projectRoot,

@@ -2,11 +2,12 @@
 
 const express = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
-const { getStats, getTicket, reRunTicket } = require('./tracker');
-const { killJob } = require('../queue/jobQueue');
-const { enqueue } = require('../queue/jobQueue');
+const { spawn, execFile } = require('child_process');
+const { getStats, getTicket, reRunTicket, recordScheduled, deleteTicket } = require('./tracker');
+const { killJob, enqueue, scheduleJob, prioritizeJob } = require('../queue/jobQueue');
+const activityLog = require('./activityLog');
 const { getPollStatus } = require('../runner/pollScheduler');
 
 const VALID_MODES = new Set(['dev', 'review', 'estimate']);
@@ -112,6 +113,8 @@ const BASE_CSS = `
   .badge-success { background: #dcfce7; color: #166534; }
   .badge-failed       { background: #fee2e2; color: #991b1b; }
   .badge-interrupted  { background: #fff7ed; color: #9a3412; }
+  .badge-scheduled    { background: #f3e8ff; color: #7e22ce; }
+  .badge-retrying     { background: #fff7ed; color: #c2410c; }
   .mode-badge { padding: 2px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; }
   .mode-dev      { background: #e0f2fe; color: #0369a1; }
   .mode-review   { background: #f3e8ff; color: #7e22ce; }
@@ -130,10 +133,12 @@ const ICONS = {
   failed:       (n = 18) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="#dc3545" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
   interrupted:  (n = 18) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
   skipped:      (n = 18) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`,
+  scheduled:    (n = 18) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="#7e22ce" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="2"/></svg>`,
+  retrying:     (n = 18) => `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="#c2410c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.49"/></svg>`,
 };
 
 function sessionIconBadge(status) {
-  const labels = { queued: 'Queued', running: 'Running', success: 'Done', failed: 'Failed', interrupted: 'Interrupted' };
+  const labels = { queued: 'Queued', running: 'Running', success: 'Done', failed: 'Failed', interrupted: 'Interrupted', scheduled: 'Scheduled', retrying: 'Retrying' };
   return `<span title="${labels[status] || status}" style="display:inline-flex;align-items:center;gap:6px">
     ${(ICONS[status] || ICONS.queued)(18)}<span class="badge badge-${status}">${labels[status] || status}</span>
   </span>`;
@@ -284,8 +289,13 @@ function renderDashboard(stats) {
   const counts = stats.tickets.reduce((acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; }, {});
 
   const rows = stats.tickets.map(t => {
-    const isRunning = t.status === 'running' || t.status === 'queued';
+    const isRunning   = t.status === 'running' || t.status === 'queued';
+    const isScheduled = t.status === 'scheduled';
+    const isRetrying  = t.status === 'retrying';
+    const isBlocked   = isRunning || isScheduled || isRetrying;
+    const isUrgent    = t.priority === 'urgent';
     const currentMode = t.mode || 'dev';
+
     const playBtn = `
       <form method="POST" action="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}/run"
             style="display:inline-flex;align-items:center;gap:6px" onsubmit="return confirmRun(this)">
@@ -294,17 +304,42 @@ function renderDashboard(stats) {
           <option value="review"${currentMode === 'review' ? ' selected' : ''}>Review</option>
           <option value="estimate"${currentMode === 'estimate' ? ' selected' : ''}>Estimate</option>
         </select>
-        <button type="submit" class="play-btn" title="Run this ticket" ${isRunning ? 'disabled' : ''}>
+        <button type="submit" class="play-btn" title="Run this ticket" ${isBlocked ? 'disabled' : ''}>
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
                fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
       </form>`;
+
+    let statusExtra = '';
+    if (isScheduled && t.scheduledFor)
+      statusExtra = `<div style="font-size:.72rem;color:#7e22ce;margin-top:3px" title="Fires ${fmtRelative(t.scheduledFor)}">${fmt(t.scheduledFor)}</div>`;
+    if (isRetrying && t.nextRetryAt)
+      statusExtra = `<div style="font-size:.72rem;color:#c2410c;margin-top:3px">Attempt ${t.retryAttempt}/${t.maxRetries} · ${fmtRelative(t.nextRetryAt)}</div>`;
+
+    const stopConfirmMsg = isScheduled ? `Cancel the scheduled run for ${t.ticketKey}?`
+      : isRetrying ? `Cancel the retry for ${t.ticketKey}?` : 'Stop this job?';
+
+    const prioritiseBtnHtml = t.status === 'queued' ? `
+        <form method="POST" action="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}/prioritize"
+              style="display:inline" title="Move to front of queue">
+          <button type="submit" class="pri-btn" title="Prioritise — move to front of queue">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
+            </svg>
+          </button>
+        </form>` : '';
+
+    const priorityBadge = isUrgent
+      ? `<span class="priority-badge">↑ Urgent</span>`
+      : '';
+
     return `
-    <tr class="${isRunning ? 'row-running' : ''}">
-      <td><a href="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}" class="ticket-link">${t.ticketKey}</a></td>
+    <tr class="${isRunning ? 'row-running' : isScheduled ? 'row-scheduled' : isRetrying ? 'row-retrying' : ''}">
+      <td><a href="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}" class="ticket-link">${t.ticketKey}</a>${priorityBadge}</td>
       <td>${modeBadge(t.mode)}</td>
       <td><span class="source-tag ${t.source === 'disk' ? 'source-disk' : ''}">${t.source}</span></td>
-      <td>${sessionIconBadge(t.status)}</td>
+      <td>${sessionIconBadge(t.status)}${statusExtra}</td>
       <td style="font-size:0.82rem;color:#555">${fmt(t.queuedAt)}</td>
       <td style="font-size:0.82rem;color:#555">${fmt(t.completedAt)}</td>
       <td style="font-size:0.82rem;color:#555">${dur(t.startedAt, t.completedAt)}</td>
@@ -312,12 +347,24 @@ function renderDashboard(stats) {
       <td>${reportCell(t.reportFiles)}</td>
       <td style="display:flex;align-items:center;gap:6px">
         ${playBtn}
-        ${isRunning ? `
+        ${prioritiseBtnHtml}
+        ${isBlocked ? `
         <form method="POST" action="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}/stop"
-              style="display:inline" onsubmit="return confirm('Stop this job?')">
-          <button type="submit" class="stop-btn" title="Stop this job">
+              style="display:inline" onsubmit="return confirm('${stopConfirmMsg}')">
+          <button type="submit" class="stop-btn" title="${stopConfirmMsg}">
             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
                  fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          </button>
+        </form>` : ''}
+        ${!isRunning ? `
+        <form method="POST" action="/dashboard/ticket/${encodeURIComponent(t.ticketKey)}/delete"
+              style="display:inline" onsubmit="return confirm('Delete ${t.ticketKey}?\\n\\nAll information about this ticket — session history, logs, and status — will be permanently lost. This cannot be undone.')">
+          <button type="submit" class="del-btn" title="Delete this ticket">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+            </svg>
           </button>
         </form>` : ''}
       </td>
@@ -359,7 +406,7 @@ function renderDashboard(stats) {
     th { background:#f0f1f5; text-align:left; padding:.6rem 1rem; font-size:.72rem;
          text-transform:uppercase; letter-spacing:.06em; color:#777; font-weight:600; }
     td { padding:.75rem 1rem; border-top:1px solid #f2f2f5; vertical-align:middle; }
-    tr:hover td { background:#fafafa; } tr.row-running td { background:#eff6ff; }
+    tr:hover td { background:#fafafa; } tr.row-running td { background:#eff6ff; } tr.row-scheduled td { background:#faf5ff; } tr.row-retrying td { background:#fff7ed; }
     .ticket-link { font-weight:700; font-size:0.95rem; color:#1a1a2e; text-decoration:none;
                    border-bottom:2px solid #0d6efd44; transition:border-color .15s; }
     .ticket-link:hover { border-bottom-color:#0d6efd; color:#0d6efd; }
@@ -377,6 +424,15 @@ function renderDashboard(stats) {
     .stop-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;
                 background:#dc2626; color:#fff; border:none; border-radius:6px; cursor:pointer; transition:background .15s; }
     .stop-btn:hover { background:#b91c1c; }
+    .del-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;
+               background:#f3f4f6; color:#9ca3af; border:none; border-radius:6px; cursor:pointer; transition:background .15s,color .15s; }
+    .del-btn:hover { background:#fee2e2; color:#dc2626; }
+    .pri-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;
+               background:#fff7ed; color:#c2410c; border:none; border-radius:6px; cursor:pointer; transition:background .15s; }
+    .pri-btn:hover { background:#ffedd5; }
+    .priority-badge { display:inline-flex; align-items:center; gap:3px; font-size:.68rem; font-weight:700;
+                      color:#c2410c; background:#fff7ed; border:1px solid #fed7aa; border-radius:5px;
+                      padding:1px 5px; margin-left:4px; vertical-align:middle; }
     .settings-link { display:inline-flex; align-items:center; gap:.4rem; color:#a0a8c0;
                      text-decoration:none; font-size:.8rem; padding:.3rem .7rem; border-radius:7px;
                      border:1px solid #ffffff22; transition:background .15s,color .15s; white-space:nowrap; }
@@ -433,6 +489,10 @@ function renderDashboard(stats) {
     <button type="button" class="header-btn icon-only" title="About Prevoyant" onclick="openModal('info-modal')">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
     </button>
+    <a href="/dashboard/activity" class="settings-link" title="Activity Log">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Activity
+    </a>
     <a href="/dashboard/settings" class="settings-link">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       Settings
@@ -463,9 +523,12 @@ function renderDashboard(stats) {
       pollingVal = 'Disabled';
       pollingClass = 'muted';
     }
-    if (ps.fallbackRanAt) {
-      startupVal = fmtRelative(ps.fallbackRanAt);
+    if (ps.enabled && ps.nextRunAt) {
+      startupVal = fmtRelative(ps.nextRunAt);
       startupClass = 'ok';
+    } else if (!ps.enabled && ps.fallbackRanAt) {
+      startupVal = 'No scheduled scan';
+      startupClass = 'muted';
     } else {
       startupVal = '—';
       startupClass = 'muted';
@@ -503,7 +566,7 @@ function renderDashboard(stats) {
     <div class="info-item">
       <svg class="info-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <div class="info-text">
-        <span class="info-lbl">Startup Scan</span>
+        <span class="info-lbl">Next Scan</span>
         <span class="info-val ${startupClass}">${startupVal}</span>
       </div>
     </div>
@@ -556,6 +619,17 @@ function renderDashboard(stats) {
           <option value="review">Review</option>
           <option value="estimate">Estimate</option>
         </select>
+      </div>
+      <div class="modal-field" style="flex-direction:row;align-items:center;gap:.6rem">
+        <input type="checkbox" id="modal-priority" style="width:15px;height:15px;accent-color:#c2410c;cursor:pointer">
+        <label for="modal-priority" class="modal-label" style="cursor:pointer;margin:0">
+          Urgent priority <span style="font-size:.72rem;font-weight:400;color:#9ca3af">— moves to front of queue</span>
+        </label>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label" for="modal-scheduled-at">Schedule for <span style="font-size:.72rem;font-weight:400;color:#9ca3af">(optional — leave blank to run now)</span></label>
+        <input type="datetime-local" id="modal-scheduled-at" class="modal-input" style="color-scheme:light">
+        <span id="modal-sched-err" style="font-size:.76rem;color:#dc2626;display:none">Scheduled time must be in the future.</span>
       </div>
       <div class="modal-actions">
         <button type="button" class="modal-btn-cancel" onclick="closeModal('add-ticket-modal')">Cancel</button>
@@ -635,7 +709,10 @@ function renderDashboard(stats) {
       document.getElementById(id).classList.remove('open');
       if (id === 'add-ticket-modal') {
         document.getElementById('modal-ticket-key').value = '';
+        document.getElementById('modal-scheduled-at').value = '';
+        document.getElementById('modal-priority').checked = false;
         document.getElementById('modal-key-err').style.display = 'none';
+        document.getElementById('modal-sched-err').style.display = 'none';
       }
     }
     function overlayClick(e, id) {
@@ -649,16 +726,31 @@ function renderDashboard(stats) {
       }
     });
     function submitAddTicket() {
-      const keyEl = document.getElementById('modal-ticket-key');
-      const key   = keyEl.value.trim().toUpperCase();
-      const errEl = document.getElementById('modal-key-err');
-      if (!key) { errEl.style.display = ''; keyEl.focus(); return; }
-      errEl.style.display = 'none';
-      const mode = document.getElementById('modal-ticket-mode').value;
+      const keyEl   = document.getElementById('modal-ticket-key');
+      const key     = keyEl.value.trim().toUpperCase();
+      const keyErr  = document.getElementById('modal-key-err');
+      if (!key) { keyErr.style.display = ''; keyEl.focus(); return; }
+      keyErr.style.display = 'none';
+
+      const schedEl  = document.getElementById('modal-scheduled-at');
+      const schedVal = schedEl.value;
+      const schedErr = document.getElementById('modal-sched-err');
+      if (schedVal) {
+        const schedDate = new Date(schedVal);
+        if (isNaN(schedDate) || schedDate <= new Date()) {
+          schedErr.style.display = ''; schedEl.focus(); return;
+        }
+      }
+      schedErr.style.display = 'none';
+
+      const mode     = document.getElementById('modal-ticket-mode').value;
+      const priority = document.getElementById('modal-priority').checked ? 'urgent' : 'normal';
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = '/dashboard/queue';
-      [['ticketKey', key], ['mode', mode]].forEach(([n, v]) => {
+      const fields = [['ticketKey', key], ['mode', mode], ['priority', priority]];
+      if (schedVal) fields.push(['scheduledAt', schedVal]);
+      fields.forEach(([n, v]) => {
         const i = document.createElement('input');
         i.type = 'hidden'; i.name = n; i.value = v;
         form.appendChild(i);
@@ -666,6 +758,343 @@ function renderDashboard(stats) {
       document.body.appendChild(form);
       form.submit();
     }
+  </script>
+</body>
+</html>`;
+}
+
+// ── Activity page ─────────────────────────────────────────────────────────────
+
+const EVENT_DISPLAY = {
+  server_started:     { label: 'Server Started',     bg: '#dbeafe', color: '#1d4ed8' },
+  webhook_received:   { label: 'Webhook Received',   bg: '#e0f2fe', color: '#0369a1' },
+  webhook_skipped:    { label: 'Webhook Skipped',    bg: '#f3f4f6', color: '#6b7280' },
+  poll_triggered:     { label: 'Poll Triggered',     bg: '#f3e8ff', color: '#7e22ce' },
+  ticket_queued:      { label: 'Queued',             bg: '#f3f4f6', color: '#6b7280' },
+  ticket_rerun:       { label: 'Re-run',             bg: '#e0f2fe', color: '#0369a1' },
+  ticket_scheduled:   { label: 'Scheduled',          bg: '#f3e8ff', color: '#7e22ce' },
+  ticket_started:     { label: 'Started',            bg: '#dbeafe', color: '#1d4ed8' },
+  ticket_completed:   { label: 'Completed',          bg: '#dcfce7', color: '#166534' },
+  ticket_failed:      { label: 'Failed',             bg: '#fee2e2', color: '#991b1b' },
+  ticket_interrupted: { label: 'Interrupted',        bg: '#fff7ed', color: '#9a3412' },
+  ticket_retrying:    { label: 'Retrying',           bg: '#fff7ed', color: '#c2410c' },
+  ticket_deleted:     { label: 'Deleted',            bg: '#fee2e2', color: '#991b1b' },
+  ticket_prioritized: { label: 'Prioritized',        bg: '#e0f2fe', color: '#0369a1' },
+  stage_active:       { label: 'Stage Active',       bg: '#eff6ff', color: '#1d4ed8' },
+  settings_saved:     { label: 'Settings Saved',     bg: '#f3f4f6', color: '#374151' },
+  kb_exported:        { label: 'KB Exported',        bg: '#dcfce7', color: '#166534' },
+  kb_imported:        { label: 'KB Imported',        bg: '#dcfce7', color: '#166534' },
+};
+
+const ACTOR_STYLE = {
+  system:  { bg: '#f3f4f6', color: '#6b7280' },
+  user:    { bg: '#dbeafe', color: '#1d4ed8' },
+  jira:    { bg: '#fef3c7', color: '#92400e' },
+  webhook: { bg: '#fef3c7', color: '#92400e' },
+  manual:  { bg: '#dcfce7', color: '#166534' },
+};
+
+function renderActivity(results, chartData, allTypes, allActors, actStats, filters) {
+  const { events: evts, total, page, pageSize, totalPages } = results;
+  const f = filters || {};
+
+  function eventBadge(type) {
+    const m = EVENT_DISPLAY[type] || { label: type, bg: '#f3f4f6', color: '#6b7280' };
+    return `<span style="padding:2px 8px;border-radius:8px;font-size:.73rem;font-weight:600;white-space:nowrap;background:${m.bg};color:${m.color}">${m.label}</span>`;
+  }
+
+  function actorBadge(actor) {
+    const m = ACTOR_STYLE[actor] || { bg: '#f3f4f6', color: '#6b7280' };
+    return `<span style="padding:2px 8px;border-radius:8px;font-size:.73rem;font-weight:600;background:${m.bg};color:${m.color}">${esc(actor)}</span>`;
+  }
+
+  function fmtDetails(details) {
+    if (!details || Object.keys(details).length === 0) return '<span style="color:#d1d5db">—</span>';
+    return Object.entries(details)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => {
+        const sv = String(v);
+        const display = sv.length > 48 ? sv.slice(0, 48) + '…' : sv;
+        return `<span style="font-size:.73rem;color:#9ca3af">${esc(k)}=</span><span style="font-size:.73rem;font-weight:600;color:#374151">${esc(display)}</span>`;
+      }).join('  ');
+  }
+
+  const rows = evts.map(e => {
+    const dt = new Date(e.ts);
+    const dateStr = dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const ticketCell = e.ticketKey
+      ? `<a href="/dashboard/ticket/${encodeURIComponent(e.ticketKey)}" style="font-weight:700;font-size:.88rem;color:#1a1a2e;text-decoration:none;border-bottom:2px solid #0d6efd44;transition:border-color .15s" onmouseover="this.style.borderBottomColor='#0d6efd'" onmouseout="this.style.borderBottomColor='#0d6efd44'">${esc(e.ticketKey)}</a>`
+      : '<span style="color:#d1d5db">—</span>';
+    return `<tr>
+      <td>
+        <div style="font-size:.78rem;font-weight:600;color:#374151;white-space:nowrap">${timeStr}</div>
+        <div style="font-size:.7rem;color:#9ca3af">${dateStr}</div>
+      </td>
+      <td>${eventBadge(e.type)}</td>
+      <td>${ticketCell}</td>
+      <td>${actorBadge(e.actor)}</td>
+      <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmtDetails(e.details)}</td>
+    </tr>`;
+  }).join('');
+
+  // Always show every defined event type even before it has been observed
+  const allKnownTypes = [...new Set([...Object.keys(EVENT_DISPLAY), ...allTypes])].sort();
+  const typeOptions = ['', ...allKnownTypes].map(t =>
+    `<option value="${esc(t)}"${(f.type || '') === t ? ' selected' : ''}>${t ? ((EVENT_DISPLAY[t] || {}).label || t) : 'All types'}</option>`
+  ).join('');
+
+  const actorOptions = ['', ...allActors].map(a =>
+    `<option value="${esc(a)}"${(f.actor || '') === a ? ' selected' : ''}>${a || 'All actors'}</option>`
+  ).join('');
+
+  function pageUrl(p) {
+    const params = new URLSearchParams();
+    if (f.type)      params.set('type', f.type);
+    if (f.ticketKey) params.set('ticketKey', f.ticketKey);
+    if (f.actor)     params.set('actor', f.actor);
+    if (f.from)      params.set('from', f.from);
+    if (f.to)        params.set('to', f.to);
+    if (p > 1)       params.set('page', p);
+    const qs = params.toString();
+    return '/dashboard/activity' + (qs ? '?' + qs : '');
+  }
+
+  const prevPage = page > 1 ? page - 1 : null;
+  const nextPage = page < totalPages ? page + 1 : null;
+  const paginationHtml = totalPages > 1 ? `
+    <div class="act-pager">
+      ${prevPage ? `<a href="${pageUrl(prevPage)}" class="pg-btn">‹ Prev</a>` : `<span class="pg-btn pg-off">‹ Prev</span>`}
+      <span class="pg-info">Page ${page} of ${totalPages}</span>
+      ${nextPage ? `<a href="${pageUrl(nextPage)}" class="pg-btn">Next ›</a>` : `<span class="pg-btn pg-off">Next ›</span>`}
+    </div>` : '';
+
+  const hasFilters = f.type || f.ticketKey || f.actor || f.from || f.to;
+
+  const topType = Object.entries(actStats.byType).sort((a, b) => b[1] - a[1])[0];
+  const topTypeLabel = topType ? ((EVENT_DISPLAY[topType[0]] || {}).label || topType[0]) : '—';
+
+  const showFrom = evts.length ? (page - 1) * pageSize + 1 : 0;
+  const showTo   = (page - 1) * pageSize + evts.length;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Activity Log — Prevoyant Server</title>
+  <style>
+    ${BASE_CSS}
+    .page { max-width:1400px; margin:0 auto; padding:1.5rem 2rem 4rem; }
+    .breadcrumb { font-size:0.8rem; color:#a0a8c0; }
+    .breadcrumb a { color:#a0a8c0; text-decoration:none; }
+    .breadcrumb a:hover { color:#fff; }
+    .act-stats { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+    .act-stat { background:#fff; border-radius:10px; padding:.8rem 1.3rem; box-shadow:0 1px 3px rgba(0,0,0,.08);
+                display:flex; flex-direction:column; gap:4px; min-width:130px; }
+    .act-stat-lbl { font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:#9ca3af; }
+    .act-stat-val { font-size:1.55rem; font-weight:700; color:#1a1a2e; line-height:1.1; }
+    .act-stat-val.small { font-size:.95rem; padding-top:3px; }
+    .charts-grid { display:grid; grid-template-columns:2fr 1fr 1fr; gap:1rem; margin-bottom:1.5rem; }
+    @media(max-width:900px) { .charts-grid { grid-template-columns:1fr 1fr; } }
+    @media(max-width:560px) { .charts-grid { grid-template-columns:1fr; } }
+    .chart-card { background:#fff; border-radius:12px; padding:1.1rem 1.2rem; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+    .chart-title { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#6b7280;
+                   margin-bottom:.85rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.4rem; }
+    .period-btns { display:flex; gap:3px; }
+    .period-btn { font-size:.68rem; font-weight:600; padding:2px 8px; border:1px solid #e5e7eb;
+                  border-radius:5px; cursor:pointer; background:#f9fafb; color:#6b7280;
+                  transition:all .12s; font-family:inherit; }
+    .period-btn.active { background:#1a1a2e; color:#fff; border-color:#1a1a2e; }
+    .filter-bar { background:#fff; border-radius:10px; padding:1rem 1.2rem; margin-bottom:.75rem;
+                  box-shadow:0 1px 3px rgba(0,0,0,.07); }
+    .filter-row { display:flex; flex-wrap:wrap; gap:.65rem; align-items:flex-end; }
+    .filter-field { display:flex; flex-direction:column; gap:.3rem; }
+    .filter-lbl { font-size:.7rem; font-weight:600; color:#6b7280; }
+    .filter-sel, .filter-inp { padding:.38rem .6rem; border:1px solid #d1d5db; border-radius:7px;
+                               font-size:.83rem; color:#1a1a2e; font-family:inherit; height:31px;
+                               background:#fff; }
+    .filter-sel:focus, .filter-inp:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 2px #6366f120; }
+    .filter-btn { padding:.38rem 1rem; background:#1a1a2e; color:#fff; border:none; border-radius:7px;
+                  font-size:.83rem; font-weight:600; cursor:pointer; height:31px; font-family:inherit;
+                  transition:background .15s; }
+    .filter-btn:hover { background:#2d3a5e; }
+    .filter-clear { font-size:.77rem; color:#6366f1; text-decoration:none; font-weight:600;
+                    height:31px; display:inline-flex; align-items:center; }
+    .filter-clear:hover { color:#4338ca; }
+    .results-meta { font-size:.76rem; color:#9ca3af; margin-bottom:.4rem; }
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden;
+            box-shadow:0 1px 3px rgba(0,0,0,.08); }
+    th { background:#f0f1f5; text-align:left; padding:.55rem 1rem; font-size:.68rem;
+         text-transform:uppercase; letter-spacing:.06em; color:#777; font-weight:600; }
+    td { padding:.65rem 1rem; border-top:1px solid #f2f2f5; vertical-align:middle; }
+    tr:hover td { background:#fafafa; }
+    .act-pager { display:flex; align-items:center; gap:.75rem; padding:.9rem 0; }
+    .pg-btn { padding:.38rem .85rem; background:#fff; border:1px solid #e5e7eb; border-radius:7px;
+              font-size:.82rem; font-weight:600; text-decoration:none; color:#374151; transition:background .12s; }
+    .pg-btn:hover:not(.pg-off) { background:#f3f4f6; }
+    .pg-off { color:#d1d5db; pointer-events:none; }
+    .pg-info { font-size:.78rem; color:#9ca3af; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Prevoyant Server</h1>
+    <span class="version-badge">v${pluginVersion}</span>
+    <div class="meta">
+      <span class="breadcrumb"><a href="/dashboard">Dashboard</a> › Activity Log</span>
+    </div>
+  </header>
+
+  <div class="page">
+
+    <!-- Stats strip -->
+    <div class="act-stats">
+      <div class="act-stat">
+        <span class="act-stat-lbl">Total Events</span>
+        <span class="act-stat-val">${actStats.total.toLocaleString()}</span>
+      </div>
+      <div class="act-stat">
+        <span class="act-stat-lbl">Last 24 h</span>
+        <span class="act-stat-val">${actStats.last24h.toLocaleString()}</span>
+      </div>
+      ${topType ? `<div class="act-stat">
+        <span class="act-stat-lbl">Most Common</span>
+        <span class="act-stat-val small">${esc(topTypeLabel)}</span>
+      </div>` : ''}
+      <div class="act-stat">
+        <span class="act-stat-lbl">Event Types</span>
+        <span class="act-stat-val">${allTypes.length}</span>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">
+          Activity Over Time
+          <div class="period-btns">
+            <button class="period-btn active" onclick="setPeriod('hourly',this)">Hourly</button>
+            <button class="period-btn"        onclick="setPeriod('daily',this)">Daily</button>
+            <button class="period-btn"        onclick="setPeriod('monthly',this)">Monthly</button>
+          </div>
+        </div>
+        <div style="position:relative;height:170px"><canvas id="chart-activity"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">
+          Tickets Processed
+          <span style="font-size:.62rem;color:#b0b7c3;font-weight:400;text-transform:none;letter-spacing:0">30 days</span>
+        </div>
+        <div style="position:relative;height:170px"><canvas id="chart-tickets"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">
+          Token Cost (USD)
+          <span style="font-size:.62rem;color:#b0b7c3;font-weight:400;text-transform:none;letter-spacing:0">30 days</span>
+        </div>
+        <div style="position:relative;height:170px"><canvas id="chart-cost"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+      <form method="GET" action="/dashboard/activity">
+        <div class="filter-row">
+          <div class="filter-field">
+            <label class="filter-lbl">Event Type</label>
+            <select name="type" class="filter-sel">${typeOptions}</select>
+          </div>
+          <div class="filter-field">
+            <label class="filter-lbl">Ticket Key</label>
+            <input type="text" name="ticketKey" value="${esc(f.ticketKey || '')}" placeholder="e.g. IV-123" class="filter-inp" style="width:120px">
+          </div>
+          <div class="filter-field">
+            <label class="filter-lbl">Actor</label>
+            <select name="actor" class="filter-sel">${actorOptions}</select>
+          </div>
+          <div class="filter-field">
+            <label class="filter-lbl">From</label>
+            <input type="datetime-local" name="from" value="${esc(f.from || '')}" class="filter-inp" style="color-scheme:light">
+          </div>
+          <div class="filter-field">
+            <label class="filter-lbl">To</label>
+            <input type="datetime-local" name="to" value="${esc(f.to || '')}" class="filter-inp" style="color-scheme:light">
+          </div>
+          <button type="submit" class="filter-btn">Apply</button>
+          ${hasFilters ? `<a href="/dashboard/activity" class="filter-clear">Clear</a>` : ''}
+        </div>
+      </form>
+    </div>
+
+    <div class="results-meta">Showing ${showFrom}–${showTo} of ${total.toLocaleString()} event${total !== 1 ? 's' : ''}</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Event</th>
+          <th>Ticket</th>
+          <th>Actor</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="5" style="text-align:center;color:#bbb;padding:2.5rem;font-size:.88rem">No events found${hasFilters ? ' — try clearing the filters' : ''}.</td></tr>`}
+      </tbody>
+    </table>
+
+    ${paginationHtml}
+  </div>
+
+  <div class="footer">Prevoyant Server v${pluginVersion}</div>
+
+  <script>
+    const CD = ${JSON.stringify(chartData)};
+    let actChart = null;
+
+    const BAR_STYLE = { backgroundColor: 'rgba(99,102,241,0.72)', borderColor: '#6366f1', borderWidth: 1, borderRadius: 3 };
+    const CHART_OPT = (yFmt) => ({
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { mode: 'index' } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 40, autoSkip: true, maxTicksLimit: 12 } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, precision: 0, ...(yFmt ? { callback: yFmt } : {}) } },
+      },
+    });
+
+    function mkBar(id, labels, data, style) {
+      const ctx = document.getElementById(id);
+      if (!ctx) return null;
+      return new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Count', data, ...BAR_STYLE, ...(style||{}) }] }, options: CHART_OPT() });
+    }
+
+    function mkLine(id, labels, data, opts) {
+      const ctx = document.getElementById(id);
+      if (!ctx) return null;
+      return new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: opts.label || '', data, borderColor: opts.color, backgroundColor: opts.fill,
+                                     borderWidth: 2, pointRadius: 2, fill: true, tension: 0.35 }] },
+        options: CHART_OPT(opts.yFmt),
+      });
+    }
+
+    function setPeriod(p, btn) {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (actChart) { actChart.data.labels = CD[p].labels; actChart.data.datasets[0].data = CD[p].data; actChart.update(); }
+    }
+
+    (function () {
+      actChart = mkBar('chart-activity', CD.hourly.labels, CD.hourly.data);
+      mkBar('chart-tickets', CD.processed.labels, CD.processed.data,
+        { backgroundColor: 'rgba(22,163,74,0.68)', borderColor: '#16a34a' });
+      mkLine('chart-cost', CD.tokenCost.labels, CD.tokenCost.data, {
+        label: 'USD', color: '#6366f1', fill: 'rgba(99,102,241,0.09)',
+        yFmt: v => '$' + v.toFixed(4),
+      });
+    })();
   </script>
 </body>
 </html>`;
@@ -715,6 +1144,42 @@ function writeEnvValues(updates) {
   fs.writeFileSync(ENV_PATH, updated.join('\n') + (extra.length ? '\n' + extra.join('\n') : ''), 'utf8');
 }
 
+// ── KB helpers ────────────────────────────────────────────────────────────────
+
+function kbDir() {
+  return process.env.PRX_KNOWLEDGE_DIR || path.join(os.homedir(), '.prevoyant', 'knowledge-base');
+}
+
+function countFilesRecursive(dir) {
+  let n = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      const full = path.join(dir, f);
+      try { n += fs.statSync(full).isDirectory() ? countFilesRecursive(full) : 1; } catch (_) {}
+    }
+  } catch (_) {}
+  return n;
+}
+
+function countFiles(dir) {
+  try { return fs.readdirSync(dir).filter(f => !f.startsWith('.')).length; } catch (_) { return 0; }
+}
+
+function kbStats() {
+  const kb       = kbDir();
+  const sessions = path.join(os.homedir(), '.prevoyant', 'sessions');
+  const reports  = process.env.CLAUDE_REPORT_DIR || path.join(os.homedir(), '.prevoyant', 'reports');
+  return {
+    kbDir:      kb,
+    kbExists:   fs.existsSync(kb),
+    kbFiles:    countFilesRecursive(kb),
+    sessions,
+    sessionFiles: countFiles(sessions),
+    reports,
+    reportFiles:  countFiles(reports),
+  };
+}
+
 // ── Settings page ─────────────────────────────────────────────────────────────
 
 function fld(key, label, type, val, placeholder, hint, opts) {
@@ -746,14 +1211,93 @@ function sectionHasValues(keys, vals) {
   return keys.some(k => vals[k] && vals[k] !== '');
 }
 
+const NOTIFY_EVENTS = [
+  // Jira
+  { key: 'jira_assigned',         label: 'Ticket assigned to me',                  group: 'Jira' },
+  { key: 'jira_created',          label: 'Relevant ticket created',                group: 'Jira' },
+  { key: 'jira_status_changed',   label: 'Ticket status changed to relevant state', group: 'Jira' },
+  // Job lifecycle
+  { key: 'ticket_scheduled',      label: 'Ticket scheduled for future run',         group: 'Job Lifecycle' },
+  { key: 'ticket_queued',         label: 'Ticket added to queue',                   group: 'Job Lifecycle' },
+  { key: 'ticket_started',        label: 'Processing started',                      group: 'Job Lifecycle' },
+  { key: 'ticket_completed',      label: 'Completed successfully',                  group: 'Job Lifecycle' },
+  { key: 'ticket_failed',         label: 'Processing failed',                       group: 'Job Lifecycle' },
+  { key: 'ticket_interrupted',    label: 'Job stopped / interrupted',               group: 'Job Lifecycle' },
+  { key: 'poll_ran',              label: 'Jira poll scan ran',                      group: 'Job Lifecycle' },
+  // Dev pipeline
+  { key: 'stage_dev_root_cause',  label: 'Root cause analysis (Step 7)',            group: 'Pipeline — Dev' },
+  { key: 'stage_dev_fix',         label: 'Fix proposed (Step 8)',                   group: 'Pipeline — Dev' },
+  { key: 'stage_dev_impact',      label: 'Impact analysis (Step 9)',                group: 'Pipeline — Dev' },
+  { key: 'stage_dev_report',      label: 'Report generated (Step 12)',              group: 'Pipeline — Dev' },
+  // Review pipeline
+  { key: 'stage_review_panel',    label: 'Engineering panel complete (R5)',         group: 'Pipeline — Review' },
+  { key: 'stage_review_report',   label: 'Review report generated (R8)',            group: 'Pipeline — Review' },
+  // Estimate pipeline
+  { key: 'stage_est_final',       label: 'Final estimate ready (E5)',               group: 'Pipeline — Estimate' },
+  { key: 'stage_est_report',      label: 'Estimate report generated (E5b)',         group: 'Pipeline — Estimate' },
+];
+
 function renderSettings(vals, flash) {
   const v = k => vals[k] || '';
 
-  const kbKeys = ['PRX_KB_MODE','PRX_SOURCE_REPO_URL','PRX_KNOWLEDGE_DIR','PRX_KB_REPO','PRX_KB_LOCAL_CLONE','PRX_KB_KEY'];
-  const emailKeys = ['PRX_EMAIL_TO','PRX_SMTP_HOST','PRX_SMTP_PORT','PRX_SMTP_USER','PRX_SMTP_PASS'];
-  const bryanKeys = ['PRX_INCLUDE_SM_IN_SESSIONS_ENABLED','PRX_SKILL_UPGRADE_MIN_SESSIONS','PRX_SKILL_COMPACTION_INTERVAL','PRX_MONTHLY_BUDGET'];
-  const autoKeys  = ['AUTO_MODE','FORCE_FULL_RUN','PRX_REPORT_VERBOSITY','PRX_JIRA_PROJECT','PRX_ATTACHMENT_MAX_MB'];
+  const kbKeys     = ['PRX_KB_MODE','PRX_SOURCE_REPO_URL','PRX_KNOWLEDGE_DIR','PRX_KB_REPO','PRX_KB_LOCAL_CLONE','PRX_KB_KEY'];
+  const emailKeys  = ['PRX_EMAIL_TO','PRX_SMTP_HOST','PRX_SMTP_PORT','PRX_SMTP_USER','PRX_SMTP_PASS'];
+  const bryanKeys  = ['PRX_INCLUDE_SM_IN_SESSIONS_ENABLED','PRX_SKILL_UPGRADE_MIN_SESSIONS','PRX_SKILL_COMPACTION_INTERVAL','PRX_MONTHLY_BUDGET'];
+  const autoKeys   = ['AUTO_MODE','FORCE_FULL_RUN','PRX_REPORT_VERBOSITY','PRX_JIRA_PROJECT','PRX_ATTACHMENT_MAX_MB'];
   const reportKeys = ['CLAUDE_REPORT_DIR'];
+  const notifyKeys = ['PRX_NOTIFY_ENABLED','PRX_NOTIFY_LEVEL','PRX_NOTIFY_MUTE_DAYS','PRX_NOTIFY_MUTE_UNTIL','PRX_NOTIFY_EVENTS'];
+  const kb = kbStats();
+
+  // Notification-specific values
+  const nEnabled   = v('PRX_NOTIFY_ENABLED');
+  const nLevel     = v('PRX_NOTIFY_LEVEL') || 'full';
+  const nMuteDays  = v('PRX_NOTIFY_MUTE_DAYS') || '0';
+  const nMuteUntil = v('PRX_NOTIFY_MUTE_UNTIL');
+  const nEvents    = v('PRX_NOTIFY_EVENTS') || NOTIFY_EVENTS.map(e => e.key).join(',');
+  const emailTo    = v('PRX_EMAIL_TO');
+  const nOpen      = nEnabled === 'Y' || sectionHasValues(notifyKeys, vals);
+
+  const checkedEvents = new Set(nEvents.split(',').map(s => s.trim()).filter(Boolean));
+
+  // Group events for rendering
+  const eventGroups = {};
+  for (const e of NOTIFY_EVENTS) {
+    if (!eventGroups[e.group]) eventGroups[e.group] = [];
+    eventGroups[e.group].push(e);
+  }
+  const eventCheckboxes = Object.entries(eventGroups).map(([groupName, events]) => {
+    const boxes = events.map(e =>
+      `<label class="n-evt-lbl" id="n-evt-lbl-${e.key}">
+        <input type="checkbox" class="n-evt-cb" value="${e.key}" ${checkedEvents.has(e.key) ? 'checked' : ''} onchange="syncNotifyEvents()">
+        ${esc(e.label)}
+      </label>`
+    ).join('');
+    const groupHint = groupName === 'Jira'
+      ? `<span style="font-size:.68rem;color:#b0b7c3;font-weight:400;text-transform:none;letter-spacing:0"> — uses JIRA_USERNAME to match assignee</span>`
+      : '';
+    return `<div class="n-group">
+      <div class="n-group-lbl">${esc(groupName)}${groupHint}</div>
+      <div class="n-events-grid">${boxes}</div>
+    </div>`;
+  }).join('');
+
+  let muteUntilHtml = '';
+  if (nMuteUntil) {
+    const d = new Date(nMuteUntil);
+    if (!isNaN(d)) {
+      const isPast = d <= new Date();
+      muteUntilHtml = `<div class="n-mute-info ${isPast ? 'n-mute-expired' : 'n-mute-active'}">
+        ${isPast ? 'Previous mute expired' : 'Muted until'}: <strong>${d.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</strong>
+      </div>`;
+    }
+  }
+
+  const levelDescriptions = {
+    full:    '<strong>Full</strong> — one email per event as it happens.',
+    compact: '<strong>Compact</strong> — all events batched into a single daily digest email.',
+    urgent:  '<strong>Urgent</strong> — failures, errors, and decision prompts only. Event selection is ignored.',
+    mute:    '<strong>Mute</strong> — all notifications are suppressed.',
+  };
 
   const flashHtml = flash === 'saved'
     ? `<div class="s-flash s-flash-ok">
@@ -823,6 +1367,56 @@ function renderSettings(vals, flash) {
     .btn-cancel { font-size:.85rem; color:#6b7280; text-decoration:none; padding:.55rem .8rem; }
     .btn-cancel:hover { color:#1a1a2e; }
     @media(max-width:560px){ .s-body { grid-template-columns:1fr; } .s-field.span2 { grid-column:span 1; } }
+    .n-warn { display:flex; align-items:flex-start; gap:.55rem; background:#fff7ed; border:1px solid #fed7aa;
+              border-radius:8px; padding:.65rem .9rem; font-size:.82rem; color:#9a3412; margin-bottom:.4rem; }
+    .n-warn svg { flex-shrink:0; margin-top:1px; color:#f97316; }
+    .n-events-groups { display:flex; flex-direction:column; gap:1rem; padding:.5rem 0 .2rem; }
+    .n-group-lbl { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.09em;
+                   color:#9ca3af; margin-bottom:.45rem; display:flex; align-items:center; gap:.5rem; }
+    .n-group-lbl::after { content:''; flex:1; height:1px; background:#f0f1f5; }
+    .n-events-grid { display:grid; grid-template-columns:1fr 1fr; gap:.4rem .9rem; }
+    .n-evt-lbl { display:flex; align-items:center; gap:.5rem; font-size:.83rem; color:#374151;
+                 cursor:pointer; user-select:none; }
+    .n-evt-lbl input[type=checkbox] { width:15px; height:15px; cursor:pointer; accent-color:#6366f1; flex-shrink:0; }
+    .n-evt-lbl.disabled { color:#9ca3af; cursor:not-allowed; }
+    .n-evt-lbl.disabled input { cursor:not-allowed; }
+    .n-sel-all-row { display:flex; align-items:center; gap:.75rem; margin-bottom:.2rem; }
+    .n-sel-btn { background:none; border:none; color:#6366f1; font-size:.76rem; font-weight:600;
+                 cursor:pointer; padding:0; font-family:inherit; text-decoration:underline; }
+    .n-sel-btn:hover { color:#4338ca; }
+    .n-level-desc { font-size:.78rem; color:#6b7280; background:#f9fafb; border:1px solid #e5e7eb;
+                    border-radius:7px; padding:.55rem .8rem; line-height:1.55; }
+    .n-level-desc strong { color:#374151; }
+    .n-mute-info { font-size:.78rem; padding:.45rem .75rem; border-radius:7px; margin-top:.35rem; }
+    .n-mute-active  { background:#ede9fe; color:#5b21b6; border:1px solid #ddd6fe; }
+    .n-mute-expired { background:#f3f4f6; color:#6b7280; border:1px solid #e5e7eb; }
+    @media(max-width:560px){ .n-events-grid { grid-template-columns:1fr; } }
+    .bk-stat-row { display:flex; flex-wrap:wrap; gap:.6rem 1.4rem; margin-bottom:1rem; }
+    .bk-stat { display:flex; flex-direction:column; gap:2px; }
+    .bk-stat-lbl { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#9ca3af; }
+    .bk-stat-val { font-size:.88rem; font-weight:600; color:#1a1a2e; }
+    .bk-stat-val.muted { color:#b0b7c3; font-weight:400; }
+    .bk-path { font-family:monospace; font-size:.76rem; color:#6b7280; background:#f9fafb;
+               border:1px solid #e5e7eb; border-radius:6px; padding:.3rem .6rem;
+               word-break:break-all; margin-bottom:.85rem; }
+    .bk-include-row { display:flex; flex-wrap:wrap; gap:.5rem 1.2rem; margin-bottom:1rem; }
+    .bk-inc-lbl { display:flex; align-items:center; gap:.45rem; font-size:.83rem; color:#374151; cursor:pointer; }
+    .bk-inc-lbl input { width:15px; height:15px; accent-color:#6366f1; cursor:pointer; }
+    .btn-export { display:inline-flex; align-items:center; gap:.5rem; padding:.55rem 1.3rem;
+                  background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:.88rem;
+                  font-weight:600; cursor:pointer; transition:background .15s; font-family:inherit; }
+    .btn-export:hover { background:#4f46e5; }
+    .btn-export:disabled { background:#a5b4fc; cursor:not-allowed; }
+    .bk-divider { border:none; border-top:1px solid #f0f1f5; margin:1.2rem 0; }
+    .bk-import-row { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+    .bk-file-input { font-size:.83rem; color:#374151; }
+    .btn-import { display:inline-flex; align-items:center; gap:.5rem; padding:.5rem 1.1rem;
+                  background:#1a1a2e; color:#fff; border:none; border-radius:8px; font-size:.85rem;
+                  font-weight:600; cursor:pointer; transition:background .15s; font-family:inherit; white-space:nowrap; }
+    .btn-import:hover { background:#2d3a5e; }
+    .btn-import:disabled { background:#9ca3af; cursor:not-allowed; }
+    .bk-import-status { display:none; margin-top:.65rem; padding:.5rem .8rem; border-radius:7px;
+                        font-size:.82rem; font-weight:500; border:1px solid transparent; }
   </style>
 </head>
 <body>
@@ -870,19 +1464,19 @@ function renderSettings(vals, flash) {
         </div>
       </details>
 
-      <!-- Webhook Server -->
+      <!-- Webhook & Polling -->
       <details class="s-section" open>
         <summary>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Webhook Server
+          Webhook &amp; Polling
           <span class="s-opt">Optional</span>
           <span class="s-chevron">›</span>
         </summary>
         <div class="s-body">
-          ${fld('WEBHOOK_PORT','Port','number',v('WEBHOOK_PORT'),'3000','HTTP port the server listens on. Default: 3000.')}
-          ${fld('WEBHOOK_POLL_INTERVAL_DAYS','Poll Interval (days)','number',v('WEBHOOK_POLL_INTERVAL_DAYS'),'1','Run poll-jira.sh every N days. 0 = disabled. Fractional values: 0.5 = every 12 h.')}
+          ${fld('WEBHOOK_PORT','Port','number',v('WEBHOOK_PORT'),'3000','HTTP port this server listens on for incoming Jira webhook events. Default: 3000.')}
+          ${fld('WEBHOOK_POLL_INTERVAL_DAYS','Poll Interval (days)','number',v('WEBHOOK_POLL_INTERVAL_DAYS'),'0','How often to run poll-jira.sh as a fallback when no Jira webhook is configured. 0 = disabled (use webhook instead). Fractional values accepted: 0.5 = every 12 h, 0.042 ≈ every hour.')}
           <div class="s-field span2">
-            ${fld('WEBHOOK_SECRET','Webhook Secret','password',v('WEBHOOK_SECRET'),'your-strong-secret','Token appended to the Jira webhook URL. Leave empty to skip validation.')}
+            ${fld('WEBHOOK_SECRET','Webhook Secret','password',v('WEBHOOK_SECRET'),'your-strong-secret','Secret token appended to the Jira webhook URL (?token=…). Leave empty to skip validation.')}
           </div>
         </div>
       </details>
@@ -905,6 +1499,81 @@ function renderSettings(vals, flash) {
           <div class="s-field span2">
             ${fld('PRX_KB_KEY','Encryption Key (distributed)','password',v('PRX_KB_KEY'),'your-strong-passphrase','AES-256-CBC passphrase for encrypting KB files. Optional. Never commit this value.')}
           </div>
+        </div>
+      </details>
+
+      <!-- Backup & Export -->
+      <details class="s-section">
+        <summary>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Backup &amp; Export
+          <span class="s-opt">Optional</span>
+          <span class="s-chevron">›</span>
+        </summary>
+        <div class="s-body full-width">
+
+          <div class="s-field">
+            <span class="s-label">Knowledge Base</span>
+            <div class="bk-path">${esc(kb.kbDir)}</div>
+            <div class="bk-stat-row">
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">KB files</span>
+                <span class="bk-stat-val ${kb.kbFiles === 0 ? 'muted' : ''}">${kb.kbFiles === 0 ? 'none' : kb.kbFiles}</span>
+              </div>
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">Session files</span>
+                <span class="bk-stat-val ${kb.sessionFiles === 0 ? 'muted' : ''}">${kb.sessionFiles === 0 ? 'none' : kb.sessionFiles}</span>
+              </div>
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">Reports</span>
+                <span class="bk-stat-val ${kb.reportFiles === 0 ? 'muted' : ''}">${kb.reportFiles === 0 ? 'none' : kb.reportFiles}</span>
+              </div>
+            </div>
+            <div class="s-hint" style="margin-bottom:.7rem">
+              Download a <code>.tar.gz</code> archive of all selected items. Extract with
+              <code>tar -xzf prevoyant-kb-backup-*.tar.gz</code>.
+            </div>
+
+            <div class="bk-include-row">
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-kb" checked ${!kb.kbExists ? 'disabled' : ''}>
+                Knowledge Base ${!kb.kbExists ? '<span style="color:#9ca3af">(not found)</span>' : ''}
+              </label>
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-sessions" ${kb.sessionFiles === 0 ? '' : 'checked'}>
+                Session files (${kb.sessionFiles})
+              </label>
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-reports" ${kb.reportFiles === 0 ? '' : 'checked'}>
+                Reports (${kb.reportFiles})
+              </label>
+            </div>
+
+            <button type="button" class="btn-export" onclick="downloadKbBackup()" ${!kb.kbExists && kb.sessionFiles === 0 && kb.reportFiles === 0 ? 'disabled' : ''}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Backup (.tar.gz)
+            </button>
+          </div>
+
+          <hr class="bk-divider">
+
+          <div class="s-field">
+            <span class="s-label">Import Backup</span>
+            <div class="s-hint" style="margin-bottom:.6rem">
+              Restore from a <code>.tar.gz</code> backup. Existing files are <strong>never overwritten</strong> —
+              only new files not already present on disk are added.
+            </div>
+            <div class="bk-import-row">
+              <input type="file" id="bk-import-file" class="bk-file-input" accept=".tar.gz,.gz"
+                     onchange="document.getElementById('btn-import').disabled = !this.files.length">
+              <button type="button" id="btn-import" class="btn-import" disabled onclick="importKbBackup()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/><polyline points="17 8 12 3 7 8"/></svg>
+                Import
+              </button>
+            </div>
+            <div id="bk-import-status" class="bk-import-status"></div>
+          </div>
+
         </div>
       </details>
 
@@ -938,6 +1607,8 @@ function renderSettings(vals, flash) {
             [{v:'full',l:'full (default)'},{v:'compact',l:'compact'},{v:'minimal',l:'minimal'}])}
           ${fld('PRX_JIRA_PROJECT','Jira Project','text',v('PRX_JIRA_PROJECT'),'IV','Scope polling to a single project key. Omit to poll all assigned projects.')}
           ${fld('PRX_ATTACHMENT_MAX_MB','Attachment Max MB','number',v('PRX_ATTACHMENT_MAX_MB'),'0','Max size for non-image attachments. 0 = no limit.')}
+          ${fld('PRX_RETRY_MAX','Auto-retry on failure','number',v('PRX_RETRY_MAX'),'0','Number of automatic retries after a job fails. 0 = disabled.')}
+          ${fld('PRX_RETRY_BACKOFF','Retry backoff (seconds)','number',v('PRX_RETRY_BACKOFF'),'30','Initial wait before first retry. Doubles on each subsequent attempt (exponential backoff).')}
         </div>
       </details>
 
@@ -960,6 +1631,73 @@ function renderSettings(vals, flash) {
         </div>
       </details>
 
+      <!-- Notifications -->
+      <details class="s-section"${nOpen ? ' open' : ''}>
+        <summary>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Notifications
+          <span class="s-opt">Optional</span>
+          <span class="s-chevron">›</span>
+        </summary>
+        <div class="s-body full-width">
+
+          <span id="n-email-set-indicator" data-set="${emailTo ? '1' : '0'}" style="display:none"></span>
+
+          <div class="s-field">
+            <label for="f_PRX_NOTIFY_ENABLED" class="s-label">Enable email notifications <code class="s-key">PRX_NOTIFY_ENABLED</code></label>
+            <select id="f_PRX_NOTIFY_ENABLED" name="PRX_NOTIFY_ENABLED" class="s-input" style="max-width:280px" onchange="onNotifyToggle(this.value)">
+              <option value="N"${nEnabled !== 'Y' ? ' selected' : ''}>N — disabled</option>
+              <option value="Y"${nEnabled === 'Y' ? ' selected' : ''}>Y — enabled</option>
+            </select>
+            <div class="s-hint">Requires PRX_EMAIL_TO and SMTP credentials to be configured in Email Delivery above.</div>
+          </div>
+
+          <div id="n-email-warn" class="n-warn" style="display:${nEnabled === 'Y' && !emailTo ? '' : 'none'}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span><strong>PRX_EMAIL_TO is not set.</strong> Set a recipient email in the Email Delivery section above before enabling notifications.</span>
+          </div>
+
+          <div id="n-config" style="display:${nEnabled === 'Y' ? '' : 'none'}">
+
+            <div class="s-field" style="margin-top:.6rem">
+              <label for="f_PRX_NOTIFY_LEVEL" class="s-label">Notification level <code class="s-key">PRX_NOTIFY_LEVEL</code></label>
+              <select id="f_PRX_NOTIFY_LEVEL" name="PRX_NOTIFY_LEVEL" class="s-input" style="max-width:340px" onchange="onNotifyLevelChange(this.value)">
+                <option value="full"${nLevel === 'full' ? ' selected' : ''}>Full — one email per event</option>
+                <option value="compact"${nLevel === 'compact' ? ' selected' : ''}>Compact — daily digest, all events in one mail</option>
+                <option value="urgent"${nLevel === 'urgent' ? ' selected' : ''}>Urgent — failures, errors and decision prompts only</option>
+                <option value="mute"${nLevel === 'mute' ? ' selected' : ''}>Mute — suppress all notifications</option>
+              </select>
+              <div id="n-level-desc" class="n-level-desc" style="margin-top:.45rem;max-width:500px">
+                ${levelDescriptions[nLevel] || ''}
+              </div>
+            </div>
+
+            <div id="n-mute-wrap" style="display:${nLevel === 'mute' ? '' : 'none'};margin-top:.6rem">
+              <div class="s-field" style="max-width:260px">
+                <label for="f_PRX_NOTIFY_MUTE_DAYS" class="s-label">Mute for (days) <code class="s-key">PRX_NOTIFY_MUTE_DAYS</code></label>
+                <input type="number" id="f_PRX_NOTIFY_MUTE_DAYS" name="PRX_NOTIFY_MUTE_DAYS" value="${esc(nMuteDays)}" min="0" max="365" placeholder="0" class="s-input">
+                <div class="s-hint">0 = mute permanently. 1–365 = mute for N days from time of save.</div>
+              </div>
+              ${muteUntilHtml}
+            </div>
+
+            <div id="n-events-wrap" style="display:${nLevel !== 'mute' && nLevel !== 'urgent' ? '' : 'none'};margin-top:.6rem">
+              <input type="hidden" id="n-events-hidden" name="PRX_NOTIFY_EVENTS" value="${esc(nEvents)}">
+              <div class="s-field">
+                <div class="n-sel-all-row">
+                  <span class="s-label" style="margin:0">Events to notify <code class="s-key">PRX_NOTIFY_EVENTS</code></span>
+                  <button type="button" class="n-sel-btn" onclick="selectAllEvents(true)">Select all</button>
+                  <button type="button" class="n-sel-btn" onclick="selectAllEvents(false)">Deselect all</button>
+                </div>
+                <div class="s-hint" style="margin-bottom:.5rem">Tick each event that should trigger an email. Jira assignment events match against your JIRA_USERNAME.</div>
+                <div class="n-events-groups">${eventCheckboxes}</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </details>
+
       <!-- Bryan -->
       <details class="s-section"${sectionHasValues(bryanKeys, vals) ? ' open' : ''}>
         <summary>
@@ -974,6 +1712,35 @@ function renderSettings(vals, flash) {
           ${fld('PRX_MONTHLY_BUDGET','Monthly Budget (USD)','number',v('PRX_MONTHLY_BUDGET'),'20.00','Claude subscription budget. Bryan flags at >80% and ≥100%.')}
           ${fld('PRX_SKILL_UPGRADE_MIN_SESSIONS','Min Sessions Before Push','number',v('PRX_SKILL_UPGRADE_MIN_SESSIONS'),'3','Sessions with an approved change before Bryan pushes to main.')}
           ${fld('PRX_SKILL_COMPACTION_INTERVAL','Compaction Interval','number',v('PRX_SKILL_COMPACTION_INTERVAL'),'10','Sessions between full SKILL.md compaction passes.')}
+        </div>
+      </details>
+
+      <!-- Health Monitor (Watchdog) -->
+      <details class="s-section"${sectionHasValues(['PRX_WATCHDOG_ENABLED','PRX_WATCHDOG_INTERVAL_SECS','PRX_WATCHDOG_FAIL_THRESHOLD'], vals) ? ' open' : ''}>
+        <summary>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Health Monitor
+          <span class="s-opt">Optional</span>
+          <span class="s-chevron">›</span>
+        </summary>
+        <div class="s-body full-width">
+          <div class="s-field">
+            <div style="display:flex;align-items:flex-start;gap:.55rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.65rem .9rem;font-size:.82rem;color:#1e40af;margin-bottom:.6rem">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>Runs as an in-process thread — detects HTTP unresponsiveness, event-loop hangs, and controlled shutdowns.
+              Planned stops via <code style="background:#dbeafe;padding:1px 4px;border-radius:3px">stop.sh</code> or
+              dashboard restart send a graceful-stop signal so no false alert is fired.
+              A hard OS kill (<code style="background:#dbeafe;padding:1px 4px;border-radius:3px">SIGKILL</code> / OOM) cannot be caught by any in-process solution.
+              Requires SMTP credentials in the <strong>Email Delivery</strong> section above and <strong>PRX_EMAIL_TO</strong> to be set.
+              Changes take effect after <em>Save &amp; Restart</em>.</span>
+            </div>
+          </div>
+          <div class="s-body" style="padding:0;box-shadow:none;background:transparent">
+            ${fld('PRX_WATCHDOG_ENABLED','Enable health monitor','select',v('PRX_WATCHDOG_ENABLED') || 'N','','Starts a background thread that polls /health and emails you if the server stops responding.',
+              [{v:'N',l:'N — disabled (default)'},{v:'Y',l:'Y — enabled'}])}
+            ${fld('PRX_WATCHDOG_INTERVAL_SECS','Check interval (seconds)','number',v('PRX_WATCHDOG_INTERVAL_SECS'),'60','How often to ping /health. Default: 60. Lower values catch outages faster but add noise.')}
+            ${fld('PRX_WATCHDOG_FAIL_THRESHOLD','Failure threshold','number',v('PRX_WATCHDOG_FAIL_THRESHOLD'),'3','Consecutive failed checks before sending the DOWN alert. Default: 3. Avoids single-blip false alarms.')}
+          </div>
         </div>
       </details>
 
@@ -993,6 +1760,91 @@ function renderSettings(vals, flash) {
     function saveAndRestart() {
       document.getElementById('_restart').value = '1';
       document.querySelector('form').submit();
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    const N_LEVEL_DESC = {
+      full:    '<strong>Full</strong> — one email per event as it happens.',
+      compact: '<strong>Compact</strong> — all events batched into a single daily digest email.',
+      urgent:  '<strong>Urgent</strong> — failures, errors, and decision prompts only. Event selection is ignored.',
+      mute:    '<strong>Mute</strong> — all notifications are suppressed.',
+    };
+
+    function onNotifyToggle(val) {
+      const emailSet = document.getElementById('n-email-set-indicator').dataset.set === '1';
+      document.getElementById('n-config').style.display      = val === 'Y' ? '' : 'none';
+      document.getElementById('n-email-warn').style.display  = (val === 'Y' && !emailSet) ? '' : 'none';
+    }
+
+    function onNotifyLevelChange(val) {
+      document.getElementById('n-mute-wrap').style.display    = val === 'mute'                       ? '' : 'none';
+      document.getElementById('n-events-wrap').style.display  = (val !== 'mute' && val !== 'urgent') ? '' : 'none';
+      const descEl = document.getElementById('n-level-desc');
+      if (descEl) descEl.innerHTML = N_LEVEL_DESC[val] || '';
+    }
+
+    function syncNotifyEvents() {
+      const vals = [...document.querySelectorAll('.n-evt-cb')]
+        .filter(cb => cb.checked).map(cb => cb.value);
+      document.getElementById('n-events-hidden').value = vals.join(',');
+    }
+    function downloadKbBackup() {
+      const sessions = document.getElementById('bk-inc-sessions').checked ? '1' : '0';
+      const reports  = document.getElementById('bk-inc-reports').checked  ? '1' : '0';
+      window.location.href = '/dashboard/kb/export?sessions=' + sessions + '&reports=' + reports;
+    }
+
+    function importKbBackup() {
+      const fileInput = document.getElementById('bk-import-file');
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { showImportStatus('error', 'Please select a .tar.gz file.'); return; }
+
+      const btn = document.getElementById('btn-import');
+      btn.disabled = true;
+      showImportStatus('loading', 'Uploading and importing…');
+
+      fetch('/dashboard/kb/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      })
+        .then(r => r.json())
+        .then(data => {
+          btn.disabled = false;
+          if (data.error) { showImportStatus('error', data.error); return; }
+          let msg;
+          if (data.added > 0 && data.skipped)
+            msg = data.added + ' new file(s) imported. Some existing files were kept unchanged.';
+          else if (data.added > 0)
+            msg = data.added + ' new file(s) imported successfully.';
+          else if (data.skipped)
+            msg = 'No new files imported — all files already exist on disk.';
+          else
+            msg = 'Import complete.';
+          showImportStatus('ok', msg);
+          fileInput.value = '';
+        })
+        .catch(err => {
+          btn.disabled = false;
+          showImportStatus('error', 'Import failed: ' + err.message);
+        });
+    }
+
+    function showImportStatus(type, msg) {
+      const el = document.getElementById('bk-import-status');
+      const styles = {
+        ok:      { bg: '#dcfce7', border: '#bbf7d0', color: '#166534' },
+        error:   { bg: '#fee2e2', border: '#fecaca', color: '#991b1b' },
+        loading: { bg: '#f9fafb', border: '#e5e7eb', color: '#374151' },
+      };
+      const s = styles[type] || styles.loading;
+      Object.assign(el.style, { display: '', background: s.bg, borderColor: s.border, color: s.color });
+      el.textContent = msg;
+    }
+
+    function selectAllEvents(select) {
+      document.querySelectorAll('.n-evt-cb').forEach(cb => cb.checked = select);
+      syncNotifyEvents();
     }
   </script>
 </body>
@@ -1473,6 +2325,26 @@ router.get('/', (_req, res) => {
 
 router.get('/json', (_req, res) => res.json(getStats()));
 
+// Activity log
+router.get('/activity', (req, res) => {
+  const { type, ticketKey, actor, from, to } = req.query;
+  const page = Math.max(1, parseInt(req.query.page || '1', 10));
+  const results = activityLog.getFiltered({ type, ticketKey, actor, from, to, page, pageSize: 100 });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(renderActivity(
+    results,
+    activityLog.getChartData(),
+    activityLog.getAllTypes(),
+    activityLog.getAllActors(),
+    activityLog.getStats(),
+    { type, ticketKey, actor, from, to },
+  ));
+});
+
+router.get('/activity/json', (_req, res) => {
+  res.json({ stats: activityLog.getStats(), chartData: activityLog.getChartData() });
+});
+
 router.get('/ticket/:key', (req, res) => {
   const ticket = getTicket(req.params.key);
   if (!ticket) return res.status(404).send('Ticket not found.');
@@ -1568,6 +2440,92 @@ router.post('/ticket/:key/stop', (req, res) => {
   res.redirect(303, `/dashboard/ticket/${encodeURIComponent(ticketKey)}`);
 });
 
+router.post('/ticket/:key/prioritize', (req, res) => {
+  const ticketKey = req.params.key.toUpperCase();
+  prioritizeJob(ticketKey);
+  activityLog.record('ticket_prioritized', ticketKey, 'user', {});
+  res.redirect(303, '/dashboard');
+});
+
+router.post('/ticket/:key/delete', (req, res) => {
+  const ticketKey = req.params.key.toUpperCase();
+  const ticket = getTicket(ticketKey);
+  if (ticket && (ticket.status === 'running' || ticket.status === 'queued')) {
+    return res.status(400).send('Cannot delete a running or queued ticket. Stop it first.');
+  }
+  if (ticket && ticket.status === 'scheduled') {
+    killJob(ticketKey); // cancels the timer; records interrupted — deleteTicket below overwrites that
+  }
+  deleteTicket(ticketKey);
+  res.redirect(303, '/dashboard');
+});
+
+// KB backup export
+router.get('/kb/export', (req, res) => {
+  const includeSessions = req.query.sessions === '1';
+  const includeReports  = req.query.reports  === '1';
+
+  const kb = kbStats();
+  const dirs = [];
+  if (kb.kbExists)                                     dirs.push(kb.kbDir);
+  if (includeSessions && kb.sessionFiles > 0)          dirs.push(kb.sessions);
+  if (includeReports  && kb.reportFiles  > 0)          dirs.push(kb.reports);
+
+  const validDirs = dirs.filter(d => fs.existsSync(d));
+  if (validDirs.length === 0) return res.status(404).send('No files found to export.');
+
+  const stamp   = new Date().toISOString().slice(0, 10);
+  const tmpFile = path.join(os.tmpdir(), `prevoyant-kb-${Date.now()}.tar.gz`);
+
+  execFile('tar', ['-czf', tmpFile, ...validDirs], (err) => {
+    if (err) {
+      console.error('[kb/export] tar failed:', err.message);
+      return res.status(500).send('Failed to create backup archive: ' + err.message);
+    }
+    activityLog.record('kb_exported', null, 'user', { includeSessions, includeReports });
+    res.download(tmpFile, `prevoyant-kb-backup-${stamp}.tar.gz`, () => {
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+    });
+  });
+});
+
+// KB backup import — restore from .tar.gz without overwriting existing files
+router.post('/kb/import', express.raw({ type: 'application/octet-stream', limit: '50mb' }), (req, res) => {
+  if (!req.body || !req.body.length) {
+    return res.status(400).json({ error: 'No file data received.' });
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `prevoyant-import-${Date.now()}.tar.gz`);
+
+  try {
+    fs.writeFileSync(tmpFile, req.body);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to write temp file: ' + e.message });
+  }
+
+  const prevoyantDir = path.join(os.homedir(), '.prevoyant');
+  const before = countFilesRecursive(prevoyantDir);
+
+  // -k / --keep-old-files: skip any file that already exists on disk
+  // tar exits with code 1 when files are skipped — that is expected and not a failure
+  execFile('tar', ['-xzf', tmpFile, '-k'], (err) => {
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+
+    if (err && err.code !== 1) {
+      console.error('[kb/import] tar failed (code %d): %s', err.code, err.message);
+      return res.status(500).json({ error: 'Extraction failed: ' + err.message });
+    }
+
+    const after   = countFilesRecursive(prevoyantDir);
+    const added   = Math.max(0, after - before);
+    const skipped = !!(err && err.code === 1);
+
+    console.log(`[kb/import] done — added=${added} skipped=${skipped}`);
+    activityLog.record('kb_imported', null, 'user', { added, skipped });
+    res.json({ ok: true, added, skipped });
+  });
+});
+
 // Secure download
 router.get('/download', (req, res) => {
   const rawPath = req.query.path;
@@ -1585,11 +2543,26 @@ router.post('/queue', express.urlencoded({ extended: false }), (req, res) => {
   const ticketKey = (req.body.ticketKey || '').toUpperCase().trim();
   const mode = (req.body.mode || 'dev').toLowerCase();
   if (!ticketKey || !VALID_MODES.has(mode)) return res.redirect(303, '/dashboard');
+
+  const priority = (req.body.priority || 'normal') === 'urgent' ? 'urgent' : 'normal';
+
   const existing = getTicket(ticketKey);
-  if (!existing || (existing.status !== 'running' && existing.status !== 'queued')) {
-    reRunTicket(ticketKey, mode, 'manual');
-    enqueue(ticketKey, mode);
+  if (existing && (existing.status === 'running' || existing.status === 'queued' || existing.status === 'scheduled')) {
+    return res.redirect(303, '/dashboard');
   }
+
+  const rawScheduled = (req.body.scheduledAt || '').trim();
+  if (rawScheduled) {
+    const scheduledFor = new Date(rawScheduled);
+    if (!isNaN(scheduledFor) && scheduledFor > new Date()) {
+      recordScheduled(ticketKey, mode, scheduledFor, 'manual');
+      scheduleJob(ticketKey, mode, scheduledFor);
+      return res.redirect(303, '/dashboard');
+    }
+  }
+
+  reRunTicket(ticketKey, mode, 'manual', priority);
+  enqueue(ticketKey, mode, priority);
   res.redirect(303, '/dashboard');
 });
 
@@ -1610,9 +2583,12 @@ router.post('/settings', express.urlencoded({ extended: false }), (req, res) => 
     'CLAUDE_REPORT_DIR',
     'AUTO_MODE', 'FORCE_FULL_RUN', 'PRX_REPORT_VERBOSITY',
     'PRX_JIRA_PROJECT', 'PRX_ATTACHMENT_MAX_MB',
+    'PRX_RETRY_MAX', 'PRX_RETRY_BACKOFF',
     'PRX_EMAIL_TO', 'PRX_SMTP_HOST', 'PRX_SMTP_PORT', 'PRX_SMTP_USER', 'PRX_SMTP_PASS',
+    'PRX_NOTIFY_ENABLED', 'PRX_NOTIFY_LEVEL', 'PRX_NOTIFY_MUTE_DAYS', 'PRX_NOTIFY_EVENTS',
     'PRX_INCLUDE_SM_IN_SESSIONS_ENABLED', 'PRX_SKILL_UPGRADE_MIN_SESSIONS',
     'PRX_SKILL_COMPACTION_INTERVAL', 'PRX_MONTHLY_BUDGET',
+    'PRX_WATCHDOG_ENABLED', 'PRX_WATCHDOG_INTERVAL_SECS', 'PRX_WATCHDOG_FAIL_THRESHOLD',
   ];
 
   try {
@@ -1620,7 +2596,21 @@ router.post('/settings', express.urlencoded({ extended: false }), (req, res) => 
     for (const key of FIELDS) {
       if (key in req.body) updates[key] = String(req.body[key] || '').trim();
     }
+
+    // Compute PRX_NOTIFY_MUTE_UNTIL from PRX_NOTIFY_MUTE_DAYS when saving with mute level
+    const notifyLevel = updates['PRX_NOTIFY_LEVEL'] || '';
+    const muteDays    = parseInt(updates['PRX_NOTIFY_MUTE_DAYS'] || '0', 10);
+    if (notifyLevel === 'mute' && muteDays > 0) {
+      const until = new Date(Date.now() + muteDays * 86400 * 1000);
+      updates['PRX_NOTIFY_MUTE_UNTIL'] = until.toISOString();
+    } else if (notifyLevel !== 'mute') {
+      updates['PRX_NOTIFY_MUTE_UNTIL'] = '';
+    }
+
     writeEnvValues(updates);
+    activityLog.record('settings_saved', null, 'user', {
+      fields: Object.keys(updates).filter(k => updates[k] !== '').join(','),
+    });
   } catch (err) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(renderSettings(readEnvValues(), 'error'));

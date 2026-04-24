@@ -1,4 +1,4 @@
-# Prevoyant - Claude Code Plugin `v1.2.3`
+# Prevoyant - Claude Code Plugin `v1.2.4`
 
 **Prevoyant** is a [Claude Code](https://claude.ai/code) plugin — an AI agent team that runs a structured, end-to-end developer workflow for Jira tickets. Three modes:
 
@@ -759,6 +759,23 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 ---
 
 ## Changelog
+
+### v1.2.4 — Scheduling, Notifications, Queue Priority, Auto-retry, KB Backup/Import, Activity Tracker, Health Monitor
+
+- **Scheduled ticket processing:** When adding a ticket via the dashboard, optionally set a future date/time for processing. Scheduled jobs survive server restarts — the schedule is persisted to disk and re-armed automatically on startup. Missed schedules are marked `interrupted` rather than silently dropped.
+- **Delete ticket:** Each ticket row now has a delete button. A confirmation dialog warns that all ticket information will be permanently removed before proceeding.
+- **"Next Scan" info strip:** The dashboard header now shows the exact date/time the next scheduled poll will run (previously showed time since last startup, which was not actionable).
+- **Queue priority:** Tickets can be flagged as **Urgent** at submission time (inserted at the front of the queue). Any queued ticket can also be promoted to the front via a **Prioritise** button on its row. A priority badge distinguishes urgent jobs visually.
+- **Auto-retry on failure:** Failed jobs are automatically retried up to `PRX_RETRY_MAX` times with exponential backoff (`PRX_RETRY_BACKOFF` seconds base, doubling each attempt). Retry countdown is shown on the ticket row. Retries can be cancelled via the existing stop button. Both settings are configurable in the Automation section of Settings.
+- **Notifications settings section:** New Settings section to configure email alerts. Requires `PRX_EMAIL_TO` to be set. Options include:
+  - **Level:** Full (all events), Compact (one summary email per job), Urgent (issues and decision prompts only), Mute (disabled)
+  - **Mute for N days:** Temporarily suppress all notifications for a set number of days
+  - **Event checkboxes:** 18 granular events across 5 groups — Jira (ticket created, updated, assigned to me), Job Lifecycle (queued, started, completed, failed, retrying, stopped, scheduled), Pipeline Dev stages (R&CA, Propose Fix, Impact Analysis, PDF Report), Pipeline Review stages (Panel Review, PDF Report), Pipeline Estimate stages (Planning Poker, KB Update)
+- **Webhook & Polling section rename:** The "Webhook Server" settings section is now "Webhook & Polling" with a clearer description of the poll interval field and its fallback role.
+- **KB Backup & Export:** Settings page now shows knowledge base file counts and a **Download Backup** button that streams a `.tar.gz` archive of the entire `~/.prevoyant/` directory.
+- **KB Import:** Upload a `.tar.gz` backup directly from the dashboard. Existing files are never overwritten — only new files are extracted. Partial success (some files kept) is reported separately from a full failure.
+- **Health Monitor (Watchdog):** An optional in-process background thread (`workers/healthMonitor.js`) that polls `GET /health` on a configurable interval and sends an urgent email alert when the server stops responding. Enabled via `PRX_WATCHDOG_ENABLED=Y` in Settings › Health Monitor. Configurable check interval (`PRX_WATCHDOG_INTERVAL_SECS`, default 60 s) and consecutive-failure threshold before alerting (`PRX_WATCHDOG_FAIL_THRESHOLD`, default 3). Sends a recovery email when the server comes back up. Planned shutdowns via `stop.sh`, dashboard restart, or `SIGTERM`/`SIGINT` send a graceful-stop signal to the thread so no false DOWN alert is fired. Uses the SMTP credentials already configured in Email Delivery — no extra dependencies. Note: as an in-process thread it shares the process lifecycle; a hard OS kill (`SIGKILL` / OOM) cannot be caught by any in-process solution.
+- **Activity Tracker:** New page at `/dashboard/activity` (accessible via the Activity link in the dashboard header). Records every significant server event across 19 event types: ticket lifecycle (queued, started, completed, failed, interrupted, retrying, scheduled, deleted, prioritized, re-run), pipeline stage transitions, Jira webhook events (received or skipped with reason), Jira poll runs (`poll_triggered` with trigger label), server starts, settings saves, and KB export/import. Each event captures timestamp, event type, ticket key, actor (system/user/jira), and structured details. Three live Chart.js graphs show events per hour/day/month (toggled), tickets processed over 30 days, and token cost (USD) over 30 days. Filterable table by event type (all 19 types always shown regardless of history), ticket key, actor, and date range. History is persisted to `~/.prevoyant/server/activity-log.json` (within the server-specific subfolder) and survives server restarts with no data loss. Legacy `activity-log.json` at the old path is auto-migrated on first start.
 
 ### v1.2.3 — Prevoyant Server (Ambient Agent) + Path Rebranding
 

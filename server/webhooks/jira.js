@@ -5,6 +5,7 @@ const fs = require('fs');
 const config = require('../config/env');
 const jobQueue = require('../queue/jobQueue');
 const tracker = require('../dashboard/tracker');
+const activityLog = require('../dashboard/activityLog');
 
 const router = express.Router();
 
@@ -76,15 +77,18 @@ router.post('/', (req, res) => {
 
   if (!isRelevantEvent(body)) {
     console.log(`[webhook] ${ticketKey} — event not relevant, skipping`);
+    activityLog.record('webhook_skipped', ticketKey, 'jira', { event: body.webhookEvent, reason: 'not relevant' });
     return res.json({ status: 'skipped', reason: 'not relevant' });
   }
 
   if (isAlreadySeen(ticketKey)) {
     console.log(`[webhook] ${ticketKey} — already processed, skipping`);
+    activityLog.record('webhook_skipped', ticketKey, 'jira', { event: body.webhookEvent, reason: 'duplicate' });
     return res.json({ status: 'skipped', reason: 'duplicate' });
   }
 
   markSeen(ticketKey);
+  activityLog.record('webhook_received', ticketKey, 'jira', { event: body.webhookEvent });
   tracker.recordQueued(ticketKey, 'webhook');
   console.log(`[webhook] ${ticketKey} — queued for analysis`);
   jobQueue.enqueue(ticketKey);

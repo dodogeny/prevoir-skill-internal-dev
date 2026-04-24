@@ -3,6 +3,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const activityLog = require('./activityLog');
 
 const serverStartedAt = new Date();
 
@@ -55,9 +56,11 @@ function findReportFiles(ticketKey) {
 function serializeDates(entry) {
   return {
     ...entry,
-    queuedAt:    entry.queuedAt    ? entry.queuedAt.toISOString()    : null,
-    startedAt:   entry.startedAt   ? entry.startedAt.toISOString()   : null,
-    completedAt: entry.completedAt ? entry.completedAt.toISOString() : null,
+    queuedAt:     entry.queuedAt     ? entry.queuedAt.toISOString()     : null,
+    startedAt:    entry.startedAt    ? entry.startedAt.toISOString()    : null,
+    completedAt:  entry.completedAt  ? entry.completedAt.toISOString()  : null,
+    scheduledFor: entry.scheduledFor ? entry.scheduledFor.toISOString() : null,
+    nextRetryAt:  entry.nextRetryAt  ? entry.nextRetryAt.toISOString()  : null,
     stages: (entry.stages || []).map(s => ({
       ...s,
       startedAt:   s.startedAt   ? s.startedAt.toISOString()   : null,
@@ -69,10 +72,12 @@ function serializeDates(entry) {
 function deserializeDates(raw) {
   return {
     ...raw,
-    queuedAt:    raw.queuedAt    ? new Date(raw.queuedAt)    : new Date(),
-    startedAt:   raw.startedAt   ? new Date(raw.startedAt)   : null,
-    completedAt: raw.completedAt ? new Date(raw.completedAt) : null,
-    outputLog:   raw.outputLog   || [],
+    queuedAt:     raw.queuedAt     ? new Date(raw.queuedAt)     : new Date(),
+    startedAt:    raw.startedAt    ? new Date(raw.startedAt)     : null,
+    completedAt:  raw.completedAt  ? new Date(raw.completedAt)   : null,
+    scheduledFor: raw.scheduledFor ? new Date(raw.scheduledFor)  : null,
+    nextRetryAt:  raw.nextRetryAt  ? new Date(raw.nextRetryAt)   : null,
+    outputLog:    raw.outputLog    || [],
     stages: (raw.stages || []).map(s => ({
       ...s,
       startedAt:   s.startedAt   ? new Date(s.startedAt)   : null,
@@ -103,11 +108,17 @@ function loadSessions() {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
         const entry = deserializeDates(raw);
-        if (entry.status === 'running' || entry.status === 'queued') {
+        if (entry.status === 'running' || entry.status === 'queued' || entry.status === 'retrying') {
           entry.status = 'interrupted';
           entry.completedAt = new Date();
           tickets.set(raw.ticketKey, entry);
-          saveSession(raw.ticketKey); // persist corrected state to disk
+          saveSession(raw.ticketKey);
+        } else if (entry.status === 'scheduled' && entry.scheduledFor && entry.scheduledFor <= new Date()) {
+          // Schedule was missed while server was offline
+          entry.status = 'interrupted';
+          entry.completedAt = new Date();
+          tickets.set(raw.ticketKey, entry);
+          saveSession(raw.ticketKey);
         } else {
           tickets.set(raw.ticketKey, entry);
         }
@@ -120,28 +131,38 @@ function loadSessions() {
 
 // ── Ticket lifecycle ──────────────────────────────────────────────────────────
 
-function recordQueued(ticketKey, source = 'webhook') {
+function recordQueued(ticketKey, source = 'webhook', priority = 'normal') {
   if (!tickets.has(ticketKey)) {
     tickets.set(ticketKey, {
-      ticketKey, source, queuedAt: new Date(),
+      ticketKey, source, priority, queuedAt: new Date(),
       startedAt: null, completedAt: null,
       status: 'queued', mode: null, stages: null, outputLog: [],
       tokenUsage: null,
     });
     saveSession(ticketKey);
+    activityLog.record('ticket_queued', ticketKey, source, { priority });
   }
 }
 
-function reRunTicket(ticketKey, mode = 'dev', source = 'manual') {
-  // Delete stale session file before writing the fresh one
+function reRunTicket(ticketKey, mode = 'dev', source = 'manual', priority = 'normal') {
   try { fs.unlinkSync(path.join(sessionsDir(), `${ticketKey}-session.json`)); } catch (_) {}
   tickets.set(ticketKey, {
-    ticketKey, source, queuedAt: new Date(),
+    ticketKey, source, priority, queuedAt: new Date(),
     startedAt: null, completedAt: null,
     status: 'queued', mode, stages: null, outputLog: [],
-    tokenUsage: null,
+    tokenUsage: null, retryAttempt: 0, maxRetries: 0, nextRetryAt: null,
   });
   saveSession(ticketKey);
+  activityLog.record('ticket_rerun', ticketKey, source, { mode, priority });
+}
+
+function recordRetrying(ticketKey, retryAttempt, maxRetries, nextRetryAt) {
+  const entry = tickets.get(ticketKey);
+  if (!entry) return;
+  tickets.set(ticketKey, { ...entry, status: 'retrying', retryAttempt, maxRetries, nextRetryAt,
+    completedAt: null, startedAt: null });
+  saveSession(ticketKey);
+  activityLog.record('ticket_retrying', ticketKey, 'system', { attempt: retryAttempt, maxRetries });
 }
 
 function recordUsage(ticketKey, usage) {
@@ -168,6 +189,7 @@ function recordStarted(ticketKey) {
   const updated = { ...entry, startedAt: new Date(), status: 'running' };
   tickets.set(ticketKey, updated);
   saveSession(ticketKey);
+  activityLog.record('ticket_started', ticketKey, 'system', { mode: entry.mode });
 }
 
 function recordCompleted(ticketKey, success) {
@@ -181,6 +203,13 @@ function recordCompleted(ticketKey, success) {
   const updated = { ...entry, completedAt: new Date(), status: success ? 'success' : 'failed', stages };
   tickets.set(ticketKey, updated);
   saveSession(ticketKey);
+  const usage = entry.tokenUsage;
+  const costUsd = usage ? (usage.actualCostUsd ?? usage.costUsd ?? null) : null;
+  activityLog.record(
+    success ? 'ticket_completed' : 'ticket_failed',
+    ticketKey, 'system',
+    { mode: entry.mode, ...(costUsd != null ? { costUsd } : {}) }
+  );
 }
 
 function recordInterrupted(ticketKey) {
@@ -194,6 +223,7 @@ function recordInterrupted(ticketKey) {
   });
   tickets.set(ticketKey, { ...entry, completedAt: now, status: 'interrupted', stages });
   saveSession(ticketKey);
+  activityLog.record('ticket_interrupted', ticketKey, 'user', { mode: entry.mode });
 }
 
 // ── Stage tracking ────────────────────────────────────────────────────────────
@@ -217,6 +247,7 @@ function recordStepActive(ticketKey, stepId) {
   const normalised = String(stepId).toUpperCase();
   const now = new Date();
   const targetIdx = stages.findIndex(s => s.id === normalised);
+  const stageLabel = targetIdx >= 0 ? stages[targetIdx].label : '';
   entry.stages = stages.map((s, i) => {
     if (s.id === normalised)   return { ...s, status: 'active',  startedAt: now };
     if (s.status === 'active') return { ...s, status: 'done',    completedAt: now };
@@ -227,6 +258,7 @@ function recordStepActive(ticketKey, stepId) {
   });
   tickets.set(ticketKey, entry);
   saveSession(ticketKey);
+  activityLog.record('stage_active', ticketKey, 'system', { stepId: normalised, label: stageLabel });
 }
 
 function appendOutput(ticketKey, text) {
@@ -297,11 +329,38 @@ function getTicket(ticketKey) {
   return diskMap.get(ticketKey) || null;
 }
 
+function recordScheduled(ticketKey, mode = 'dev', scheduledFor, source = 'manual') {
+  tickets.set(ticketKey, {
+    ticketKey, source, queuedAt: new Date(),
+    startedAt: null, completedAt: null,
+    status: 'scheduled', mode, scheduledFor, stages: null, outputLog: [],
+    tokenUsage: null,
+  });
+  saveSession(ticketKey);
+  activityLog.record('ticket_scheduled', ticketKey, source, {
+    mode,
+    scheduledFor: scheduledFor ? scheduledFor.toISOString() : null,
+  });
+}
+
+function getScheduledTickets() {
+  const now = new Date();
+  return Array.from(tickets.values())
+    .filter(t => t.status === 'scheduled' && t.scheduledFor && t.scheduledFor > now);
+}
+
+function deleteTicket(ticketKey) {
+  tickets.delete(ticketKey);
+  try { fs.unlinkSync(path.join(sessionsDir(), `${ticketKey}-session.json`)); } catch (_) {}
+  activityLog.record('ticket_deleted', ticketKey, 'user', {});
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 loadSessions();
 
 module.exports = {
-  recordQueued, reRunTicket, recordStarted, recordCompleted, recordInterrupted,
+  recordQueued, reRunTicket, recordScheduled, recordRetrying,
+  recordStarted, recordCompleted, recordInterrupted,
   recordStepActive, appendOutput, recordUsage, recordActualCost,
-  getStats, getTicket,
+  getStats, getTicket, getScheduledTickets, deleteTicket,
 };
