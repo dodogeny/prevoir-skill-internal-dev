@@ -143,6 +143,45 @@ install_pandoc_win() {
   [ "$ok" -eq 1 ]
 }
 
+install_python_win() {
+  local ok=0
+  if command -v winget.exe &>/dev/null; then
+    info "→ winget"
+    winget.exe install --id Python.Python.3 --silent \
+      --accept-package-agreements --accept-source-agreements 2>&1 | tail -5 && ok=1
+  fi
+  if [ "$ok" -eq 0 ] && command -v choco.exe &>/dev/null; then
+    info "→ Chocolatey"
+    choco.exe install python -y 2>&1 | tail -5 && ok=1
+  fi
+  if [ "$ok" -eq 0 ] && command -v scoop &>/dev/null; then
+    info "→ Scoop"
+    scoop install python 2>&1 | tail -5 && ok=1
+  fi
+  [ "$ok" -eq 1 ]
+}
+
+# After a Windows package manager installs Python, PATH is not refreshed in the
+# current Git Bash session. Probe known LOCALAPPDATA install locations directly.
+find_python_win_after_install() {
+  local appdata=""
+  if command -v cygpath &>/dev/null && [ -n "${USERPROFILE:-}" ]; then
+    appdata="$(cygpath -u "$USERPROFILE")/AppData/Local"
+  else
+    appdata="/c/Users/${USERNAME:-$USER}/AppData/Local"
+  fi
+  local py_exe
+  py_exe="$(find "$appdata/Programs/Python" -maxdepth 2 -name python.exe 2>/dev/null \
+            | sort -rV | head -1 || true)"
+  if [ -n "$py_exe" ] && "$py_exe" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
+    echo "$py_exe"
+    return 0
+  fi
+  # Refresh shell hash table and retry find_python (covers choco / scoop paths)
+  hash -r 2>/dev/null || true
+  find_python
+}
+
 # Resolve the Windows user home directory from within WSL
 wsl_win_home() {
   local win_path
@@ -319,9 +358,19 @@ fi
 mkdir -p "$(dirname "$SETTINGS_FILE")"
 
 PYTHON_CMD="$(find_python || true)"
+if [ -z "$PYTHON_CMD" ] && [ "$IS_WIN_BASH" -eq 1 ]; then
+  info "Python not found — attempting to install..."
+  if install_python_win; then
+    PYTHON_CMD="$(find_python_win_after_install || true)"
+    [ -n "$PYTHON_CMD" ] && ok "Python installed ($(\"$PYTHON_CMD\" --version 2>&1))" \
+                         || warn "Python installed but not yet in PATH — re-run setup or open a new terminal"
+  else
+    warn "Automatic Python install failed — install manually: winget install Python.Python.3"
+  fi
+fi
 if [ -z "$PYTHON_CMD" ]; then
-  err "Could not update settings.json — Python 3 not found; add the marketplace manually (see README)"
-  PYTHON_CMD="python3"  # keep variable set so step 6 can also skip cleanly
+  err "Python 3 not found — add the marketplace manually (see README)"
+  PYTHON_CMD="python3"  # dummy so subsequent heredocs fail gracefully
 fi
 
 "$PYTHON_CMD" - "$REPO_PATH_FOR_JSON" "$SETTINGS_FILE" <<'PYEOF'
