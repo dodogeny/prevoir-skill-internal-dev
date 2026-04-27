@@ -1,5 +1,15 @@
 'use strict';
 
+// Prefix every console line with an ISO timestamp so prevoyant-server.log
+// entries are traceable without relying on the shell's redirection timestamp.
+(function patchConsole() {
+  const ts = () => new Date().toISOString();
+  for (const level of ['log', 'warn', 'error', 'info']) {
+    const orig = console[level].bind(console);
+    console[level] = (...args) => orig(`[${ts()}]`, ...args);
+  }
+})();
+
 const express = require('express');
 const path    = require('path');
 const { Worker } = require('worker_threads');

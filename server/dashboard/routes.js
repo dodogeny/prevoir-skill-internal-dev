@@ -94,13 +94,16 @@ let _budgetCachedAt = 0;
 const BUDGET_CACHE_MS = 120 * 1000;
 
 // Fetch actual billed cost for the current calendar month via Anthropic Cost Report API.
-// amount fields are in lowest currency units (cents), divide by 100 for USD.
 function fetchAnthropicCostReport(adminKey) {
   const now   = new Date();
   const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01T00:00:00Z`;
+  // ending_at = start of tomorrow so today's bucket is included
+  const tomorrow = new Date(now);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const end = `${tomorrow.getUTCFullYear()}-${String(tomorrow.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrow.getUTCDate()).padStart(2, '0')}T00:00:00Z`;
 
   return new Promise((resolve, reject) => {
-    const params = `starting_at=${encodeURIComponent(start)}&bucket_width=1d`;
+    const params = `starting_at=${encodeURIComponent(start)}&ending_at=${encodeURIComponent(end)}&bucket_width=1d`;
     const options = {
       hostname: 'api.anthropic.com',
       path:     `/v1/organizations/cost_report?${params}`,
@@ -117,13 +120,48 @@ function fetchAnthropicCostReport(adminKey) {
           if (res.statusCode !== 200) {
             return reject(new Error(`Anthropic API ${res.statusCode}: ${json.error?.message || raw.slice(0, 120)}`));
           }
-          let totalCents = 0;
-          for (const bucket of (json.data || [])) {
+
+          // The API may wrap buckets in a { data: [...] } envelope or return a
+          // single bucket object directly. Normalise to an array either way.
+          const buckets = Array.isArray(json.data) ? json.data
+                        : Array.isArray(json)       ? json
+                        : [json];
+
+          // Log a summary so we can verify shape and coverage.
+          const withResults = buckets.filter(b => (b.results || []).length > 0);
+          console.log(`[budget] Cost Report API: ${buckets.length} bucket(s), ${withResults.length} with results`);
+          if (withResults.length > 0) {
+            console.log('[budget] Cost Report first non-empty bucket sample:', JSON.stringify(withResults[0]).slice(0, 400));
+          } else {
+            console.log('[budget] Cost Report first bucket sample:', JSON.stringify(buckets[0]).slice(0, 400));
+          }
+
+          // Extract USD from a result entry. Handles:
+          //   { amount: 295 }               → integer cents → ÷ 100
+          //   { amount: 2.95 }              → float USD     → use directly
+          //   { amount: { value, currency }} → nested cents  → value ÷ 100
+          function extractUSD(r) {
+            const val = r.amount ?? r.cost ?? r.total_cost ?? 0;
+            if (typeof val === 'object' && val !== null) {
+              return parseFloat(val.value ?? 0) / 100;
+            }
+            const n = parseFloat(val) || 0;
+            // Whole numbers or values ≥ 1 are assumed to be cents.
+            return (Number.isInteger(n) || n >= 1) ? n / 100 : n;
+          }
+
+          let totalUSD = 0;
+          for (const bucket of buckets) {
             for (const r of (bucket.results || [])) {
-              totalCents += parseInt(r.amount || 0, 10);
+              totalUSD += extractUSD(r);
             }
           }
-          resolve(totalCents / 100); // cents → USD
+
+          if (totalUSD === 0) {
+            console.warn('[budget] Cost Report API summed to $0 — see bucket sample above');
+          }
+
+          resolve(totalUSD);
         } catch (e) { reject(e); }
       });
     });
@@ -185,6 +223,7 @@ function getBudgetStatus() {
     if (adminKey && apiCost === null) {
       console.warn('[budget] Anthropic Cost Report API returned no data — ccusage fallback in use');
     }
+
     const available = apiCost != null || ccEntry != null;
     if (!available) {
       const fallback = { available: false, spent: null, budget, remaining: null, pct: null, month: thisMonth, source: 'unavailable', tokens: null };

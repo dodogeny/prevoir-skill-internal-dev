@@ -32,8 +32,7 @@ const startedAt   = new Date().toUTCString();
 function log(level, msg) {
   const ts = new Date().toISOString();
   if (parentPort) parentPort.postMessage({ type: 'log', level, msg, ts });
-  // Also print to stdout so it lands in prevoyant-server.log
-  console.log(`[watchdog/${level}] ${msg}`);
+  console.log(`[${ts}] [watchdog/${level}] ${msg}`);
 }
 
 // ── SMTP client (no external deps, supports port 587 STARTTLS + 465 SSL) ─────

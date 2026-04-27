@@ -43,7 +43,7 @@ let lastAlertAt = null;
 function log(level, msg) {
   const ts = new Date().toISOString();
   if (parentPort) parentPort.postMessage({ type: 'log', level, msg, ts });
-  console.log(`[disk-monitor/${level}] ${msg}`);
+  console.log(`[${ts}] [disk-monitor/${level}] ${msg}`);
 }
 
 // ── SMTP client (identical pattern to healthMonitor — no external deps) ───────

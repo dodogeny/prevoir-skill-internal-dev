@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "prx",
-      "version": "1.2.2",
+      "version": "1.2.4",
       "source": "./plugin",
       "description": "Claude Code plugin for structured Jira-driven developer workflow"
     }

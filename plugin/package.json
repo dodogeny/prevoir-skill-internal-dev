@@ -1,6 +1,6 @@
 {
   "name": "prx-plugin",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "private": true,
   "description": "Claude Code plugin for structured Jira-driven developer workflow",
   "type": "module",
