@@ -72,6 +72,21 @@ locate_npx() {
   return 1
 }
 
+# Returns the first working Python 3 executable.
+# On Windows Git Bash, python3 resolves to a Store stub that exits non-zero,
+# so we verify each candidate actually runs before accepting it.
+find_python() {
+  for cmd in python3 python py; do
+    if command -v "$cmd" &>/dev/null 2>&1; then
+      if "$cmd" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
+        echo "$cmd"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
 install_node_nvm() {
   local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
   if [ ! -f "$nvm_dir/nvm.sh" ]; then
@@ -303,7 +318,13 @@ fi
 
 mkdir -p "$(dirname "$SETTINGS_FILE")"
 
-python3 - "$REPO_PATH_FOR_JSON" "$SETTINGS_FILE" <<'PYEOF'
+PYTHON_CMD="$(find_python || true)"
+if [ -z "$PYTHON_CMD" ]; then
+  err "Could not update settings.json — Python 3 not found; add the marketplace manually (see README)"
+  PYTHON_CMD="python3"  # keep variable set so step 6 can also skip cleanly
+fi
+
+"$PYTHON_CMD" - "$REPO_PATH_FOR_JSON" "$SETTINGS_FILE" <<'PYEOF'
 import json, sys, os
 
 repo_path     = sys.argv[1]
@@ -352,7 +373,7 @@ if [ -f "$LOCAL_SETTINGS" ]; then
   ok "settings.local.json already exists — skipping"
   info "To regenerate, delete it and re-run setup."
 else
-  python3 - "$LOCAL_SETTINGS" <<'PYEOF'
+  "$PYTHON_CMD" - "$LOCAL_SETTINGS" <<'PYEOF'
 import json, sys
 
 path = sys.argv[1]
