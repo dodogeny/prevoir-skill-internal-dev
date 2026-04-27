@@ -491,27 +491,28 @@ step "7/7  plugin install + enable  [required]"
 
 PLUGIN_OK=0
 if command -v claude &>/dev/null; then
-  if claude plugin list 2>/dev/null | grep -q "prx@dodogeny"; then
-    ok "prx@dodogeny already installed"
-    claude plugin enable prx@dodogeny 2>/dev/null || true
+  if claude plugin list 2>/dev/null | grep -q "prevoyant-claude-plugin@dodogeny"; then
+    ok "prevoyant-claude-plugin@dodogeny already installed"
+    claude plugin enable prevoyant-claude-plugin@dodogeny 2>/dev/null || true
     PLUGIN_OK=1
   else
     info "Installing Prevoyant plugin..."
-    claude plugin install prx@dodogeny 2>&1 | tail -5 || true
-    claude plugin enable  prx@dodogeny 2>&1 | tail -3 || true
-    if claude plugin list 2>/dev/null | grep -q "prx@dodogeny"; then
-      ok "prx@dodogeny installed and enabled"
+    claude plugin marketplace update dodogeny 2>&1 | tail -3 || true
+    claude plugin install prevoyant-claude-plugin@dodogeny 2>&1 | tail -5 || true
+    claude plugin enable  prevoyant-claude-plugin@dodogeny 2>&1 | tail -3 || true
+    if claude plugin list 2>/dev/null | grep -q "prevoyant-claude-plugin@dodogeny"; then
+      ok "prevoyant-claude-plugin@dodogeny installed and enabled"
       PLUGIN_OK=1
     else
       warn "Plugin install did not complete — run manually after setup:"
-      info "  claude plugin install prx@dodogeny && claude plugin enable prx@dodogeny"
-      impact "Prevoyant /prx:dev skill unavailable until the plugin is installed and enabled"
+      info "  claude plugin install prevoyant-claude-plugin@dodogeny && claude plugin enable prevoyant-claude-plugin@dodogeny"
+      impact "Prevoyant /prevoyant-claude-plugin:dev skill unavailable until the plugin is installed and enabled"
     fi
   fi
 else
   warn "claude CLI not found in PATH — plugin will not be auto-installed"
   impact "After Claude Code is installed, run:"
-  info "  claude plugin install prx@dodogeny && claude plugin enable prx@dodogeny"
+  info "  claude plugin install prevoyant-claude-plugin@dodogeny && claude plugin enable prevoyant-claude-plugin@dodogeny"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
@@ -527,8 +528,8 @@ printf "\n${BOLD}Next steps:${NC}\n"
 printf "  1. Edit .env — set PRX_REPO_DIR, JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN\n"
 printf "     Get your Jira API token: https://id.atlassian.com/manage-profile/security/api-tokens\n"
 if [ "$PLUGIN_OK" -eq 1 ]; then
-  printf "  2. Open Claude Code and try: /prx:dev PROJ-1234\n\n"
+  printf "  2. Open Claude Code and try: /prevoyant-claude-plugin:dev PROJ-1234\n\n"
 else
-  printf "  2. Run: claude plugin install prx@dodogeny && claude plugin enable prx@dodogeny\n"
-  printf "  3. Open Claude Code and try: /prx:dev PROJ-1234\n\n"
+  printf "  2. Run: claude plugin install prevoyant-claude-plugin@dodogeny && claude plugin enable prevoyant-claude-plugin@dodogeny\n"
+  printf "  3. Open Claude Code and try: /prevoyant-claude-plugin:dev PROJ-1234\n\n"
 fi

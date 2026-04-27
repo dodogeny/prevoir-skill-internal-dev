@@ -331,7 +331,7 @@ for TICKET in $TICKETS; do
   echo "$(date '+%Y-%m-%d %H:%M:%S') ── Claude output start ──────────────────────" >> "$LOG_FILE"
   AUTO_MODE=true \
     claude --dangerously-skip-permissions \
-           --print "/prx:dev $TICKET" \
+           --print "/prevoyant-claude-plugin:dev $TICKET" \
            --mcp-config "$MCP_CONFIG_FILE" \
            --output-format stream-json \
            --verbose \

@@ -9,7 +9,7 @@
   },
   "plugins": [
     {
-      "name": "prx",
+      "name": "prevoyant-claude-plugin",
       "version": "1.2.4",
       "source": "./plugin",
       "description": "Claude Code plugin for structured Jira-driven developer workflow"

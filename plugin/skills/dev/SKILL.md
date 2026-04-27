@@ -1136,7 +1136,7 @@ This skill operates in three modes. Detect the mode from the invocation:
 Invoke when the developer provides:
 - A Jira ticket URL: `https://yourcompany.atlassian.net/browse/PROJ-1234`
 - A Jira ticket key: `PROJ-1234`
-- A phrase like `/prx:dev PROJ-1234` or `/dev PROJ-1234` or "start dev on PROJ-1234" or "pick up PROJ-1234"
+- A phrase like `/prevoyant-claude-plugin:dev PROJ-1234` or `/dev PROJ-1234` or "start dev on PROJ-1234" or "pick up PROJ-1234"
 - A phrase like `review PROJ-1234` or `PR review PROJ-1234` or `/dev review PROJ-1234` for code review
 - A phrase like `estimate PROJ-1234` or `size PROJ-1234` or `/dev estimate PROJ-1234` for effort estimation
 
