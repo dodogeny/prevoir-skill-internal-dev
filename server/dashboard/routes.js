@@ -584,6 +584,14 @@ function renderDashboard(stats, budget) {
                   cursor:pointer; transition:background .15s,color .15s; white-space:nowrap; font-family:inherit; }
     .header-btn:hover { background:#ffffff15; color:#fff; }
     .header-btn.icon-only { padding:.3rem .5rem; }
+    .upd-toast { position:fixed; bottom:1.5rem; right:1.5rem; background:#1e293b; color:#fff;
+                 padding:.6rem 1.1rem; border-radius:8px; font-size:.82rem; font-weight:500;
+                 box-shadow:0 4px 14px rgba(0,0,0,.25); z-index:1100; display:none;
+                 align-items:center; gap:.5rem; max-width:320px; }
+    .upd-toast.show { display:flex; }
+    .upd-toast.ok   { background:#166534; }
+    .upd-toast.fail { background:#991b1b; }
+    .upd-toast.info { background:#1d4ed8; }
     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
                      align-items:center; justify-content:center; z-index:900; padding:1rem; }
     .modal-overlay.open { display:flex; }
@@ -627,6 +635,9 @@ function renderDashboard(stats, budget) {
     <button type="button" class="header-btn" onclick="openModal('add-ticket-modal')">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Add Ticket
+    </button>
+    <button type="button" class="header-btn icon-only" id="check-update-btn" title="Check for updates" onclick="checkForUpdates()">
+      <svg id="check-update-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
     </button>
     <button type="button" class="header-btn icon-only" title="About Prevoyant" onclick="openModal('info-modal')">
       <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -906,6 +917,29 @@ function renderDashboard(stats, budget) {
     </div>
   </div>
 
+  <div class="modal-overlay" id="update-check-modal" onclick="overlayClick(event,'update-check-modal')">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <span class="modal-title">Update Available</span>
+        <button class="modal-close" onclick="closeModal('update-check-modal')" title="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p id="update-check-msg" style="font-size:.88rem;color:#4b5563;line-height:1.6;margin-bottom:1.2rem"></p>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn-cancel" onclick="closeModal('update-check-modal')">Later</button>
+        <button type="button" id="update-modal-upgrade-btn" onclick="upgradeFromModal()"
+          style="background:#d97706;color:#fff;border:none;border-radius:6px;padding:.4rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit">
+          Upgrade Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="upd-toast" class="upd-toast">
+    <span id="upd-toast-msg"></span>
+  </div>
+
   <script>
     function confirmRun(form) {
       const key  = form.action.split('/ticket/')[1].split('/run')[0];
@@ -955,11 +989,61 @@ function renderDashboard(stats, budget) {
     }
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        ['add-ticket-modal','info-modal'].forEach(id => {
+        ['add-ticket-modal','info-modal','update-check-modal'].forEach(id => {
           if (document.getElementById(id).classList.contains('open')) closeModal(id);
         });
       }
     });
+    function showUpdToast(msg, type, duration) {
+      const t = document.getElementById('upd-toast');
+      document.getElementById('upd-toast-msg').textContent = msg;
+      t.className = 'upd-toast show' + (type ? ' ' + type : '');
+      clearTimeout(t._tid);
+      if (duration !== 0) t._tid = setTimeout(() => t.classList.remove('show'), duration || 3000);
+    }
+    function checkForUpdates() {
+      const btn  = document.getElementById('check-update-btn');
+      const icon = document.getElementById('check-update-icon');
+      btn.disabled = true;
+      icon.classList.add('spin');
+      fetch('/dashboard/check-update', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          btn.disabled = false;
+          icon.classList.remove('spin');
+          if (!d.ok) { showUpdToast('Check failed: ' + (d.error || 'Unknown error'), 'fail'); return; }
+          if (d.available) {
+            document.getElementById('update-check-msg').textContent =
+              'v' + d.latestVersion + ' is available (you have v' + d.currentVersion + '). Would you like to upgrade now?';
+            openModal('update-check-modal');
+          } else {
+            showUpdToast('Already up to date — v' + d.currentVersion, 'ok');
+          }
+        })
+        .catch(e => {
+          btn.disabled = false;
+          icon.classList.remove('spin');
+          showUpdToast('Check failed: ' + e.message, 'fail');
+        });
+    }
+    function upgradeFromModal() {
+      const upgradeBtn = document.getElementById('update-modal-upgrade-btn');
+      upgradeBtn.disabled = true;
+      upgradeBtn.textContent = 'Upgrading…';
+      closeModal('update-check-modal');
+      showUpdToast('Upgrading — please wait…', 'info', 0);
+      fetch('/dashboard/upgrade', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            showUpdToast('Upgraded — restarting in 4s…', 'ok', 0);
+            setTimeout(() => location.reload(), 4000);
+          } else {
+            showUpdToast('Upgrade failed: ' + (d.error || 'Unknown error'), 'fail');
+          }
+        })
+        .catch(e => showUpdToast('Upgrade error: ' + e.message, 'fail'));
+    }
     function submitAddTicket() {
       const keyEl   = document.getElementById('modal-ticket-key');
       const key     = keyEl.value.trim().toUpperCase();
@@ -3290,6 +3374,53 @@ router.post('/restart', (_req, res) => {
     ], { detached: true, stdio: 'ignore' });
     child.unref();
   });
+});
+
+// Manual update check — fetches latest version from GitHub and updates status file
+router.post('/check-update', (_req, res) => {
+  const https = require('https');
+  const pluginJsonPath = path.resolve(__dirname, '../../plugin/.claude-plugin/plugin.json');
+  let currentVersion = '0.0.0';
+  try { currentVersion = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8')).version || '0.0.0'; } catch (_) {}
+
+  const REMOTE_URL = 'https://raw.githubusercontent.com/dodogeny/prevoyant-claude-plugin/main/plugin/.claude-plugin/plugin.json';
+
+  function semverNewer(remote, current) {
+    const parse = v => v.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0);
+    const [rMaj, rMin, rPat] = parse(remote);
+    const [cMaj, cMin, cPat] = parse(current);
+    if (rMaj !== cMaj) return rMaj > cMaj;
+    if (rMin !== cMin) return rMin > cMin;
+    return rPat > cPat;
+  }
+
+  const req2 = https.get(REMOTE_URL, { timeout: 15000 }, r => {
+    if (r.statusCode !== 200) {
+      r.resume();
+      return res.json({ ok: false, error: `HTTP ${r.statusCode}` });
+    }
+    let data = '';
+    r.on('data', chunk => { data += chunk; });
+    r.on('end', () => {
+      try {
+        const latestVersion = JSON.parse(data).version || null;
+        const available = latestVersion ? semverNewer(latestVersion, currentVersion) : false;
+        const statusFile = UPDATE_STATUS_FILE;
+        let existing = {};
+        try { existing = JSON.parse(fs.readFileSync(statusFile, 'utf8')); } catch (_) {}
+        const updated = { ...existing, available, latestVersion, currentVersion, checkedAt: new Date().toISOString() };
+        try {
+          fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+          fs.writeFileSync(statusFile, JSON.stringify(updated, null, 2));
+        } catch (_) {}
+        res.json({ ok: true, available, latestVersion, currentVersion });
+      } catch (e) {
+        res.json({ ok: false, error: `Bad JSON: ${e.message}` });
+      }
+    });
+  });
+  req2.on('error', e => res.json({ ok: false, error: e.message }));
+  req2.on('timeout', () => { req2.destroy(); res.json({ ok: false, error: 'Request timed out' }); });
 });
 
 // Upgrade — pulls latest from git then restarts the server
