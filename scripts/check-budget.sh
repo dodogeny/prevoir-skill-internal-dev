@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-budget.sh — Monthly Claude token budget check using ccusage.
+# check-budget.sh — Monthly Claude token budget check using codeburn.
 #
 # Runs as a SessionStart hook (after load-env.sh). Does two things:
 #   1. Saves today's daily spend to /tmp/.prx-session-start-spend so Step 11
@@ -8,7 +8,7 @@
 #      status into Claude's session context (and surfaces a warning when over
 #      budget).
 #
-# Node.js is required for npx/ccusage. If not found, this script installs it
+# Node.js is required for npx/codeburn. If not found, this script installs it
 # automatically (Homebrew → nvm on macOS; apt/dnf → nvm on Linux).
 
 # Load .env so PRX_MONTHLY_BUDGET is available when called by the hook runner
@@ -141,7 +141,7 @@ ensure_npx() {
     echo "$npx_bin"; return 0
   fi
 
-  echo "⚙️  Node.js not found — installing automatically (required for ccusage budget tracking)..." >&2
+  echo "⚙️  Node.js not found — installing automatically (required for codeburn budget tracking)..." >&2
 
   local os
   os="$(uname -s)"
@@ -169,19 +169,22 @@ ensure_npx() {
 NPX_BIN=$(ensure_npx) || {
   emit_json \
     "Budget check skipped: Node.js could not be installed automatically. Visit https://nodejs.org to install, then restart Claude Code." \
-    "⚠️  ccusage requires Node.js — install from https://nodejs.org to enable budget tracking."
+    "⚠️  codeburn requires Node.js — install from https://nodejs.org to enable budget tracking."
   exit 0
 }
 
-# Capture daily baseline for Step 11 session-delta calculation
-"$NPX_BIN" --yes ccusage@latest daily --json > "$BASELINE_FILE" 2>/dev/null \
+TODAY_DATE=$(date +%Y-%m-%d)
+MONTH_START=$(date +%Y-%m-01)
+
+# Capture today's baseline for Step 11 session-delta calculation
+"$NPX_BIN" --yes codeburn@latest report --from "$TODAY_DATE" --to "$TODAY_DATE" --format json > "$BASELINE_FILE" 2>/dev/null \
   || rm -f "$BASELINE_FILE"
 
-# Get monthly spend
-MONTHLY_JSON=$("$NPX_BIN" --yes ccusage@latest monthly --json 2>/dev/null) || MONTHLY_JSON=""
+# Get current-month spend
+MONTHLY_JSON=$("$NPX_BIN" --yes codeburn@latest report --from "$MONTH_START" --to "$TODAY_DATE" --format json 2>/dev/null) || MONTHLY_JSON=""
 
 if [ -z "$MONTHLY_JSON" ]; then
-  emit_json "Budget check skipped: ccusage returned no data."
+  emit_json "Budget check skipped: codeburn returned no data."
   exit 0
 fi
 
@@ -195,34 +198,23 @@ baseline_file = sys.argv[2]
 monthly_raw = """$MONTHLY_JSON"""
 
 today = datetime.date.today()
-current_month = today.strftime('%Y-%m')
 next_month = (today.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
 days_remaining = (next_month - today).days
 
-# Parse monthly spend for current month
+# Parse monthly spend — codeburn JSON: { overview: { cost: N }, ... }
 spent = 0.0
 try:
     data = json.loads(monthly_raw)
-    rows = data if isinstance(data, list) else data.get('data', data.get('monthly', []))
-    for row in rows:
-        month = row.get('month', row.get('period', ''))
-        if isinstance(month, str) and month.startswith(current_month):
-            spent = float(row.get('totalCost', row.get('cost', row.get('total', 0))))
-            break
+    spent = float(data.get('overview', {}).get('cost', 0))
 except Exception:
     pass
 
-# Parse today's baseline spend (pre-session)
+# Parse today's baseline spend (pre-session) — same JSON structure
 baseline_today = 0.0
 if os.path.exists(baseline_file):
     try:
         daily_data = json.loads(open(baseline_file).read())
-        rows = daily_data if isinstance(daily_data, list) else daily_data.get('data', daily_data.get('daily', []))
-        today_str = today.isoformat()
-        for row in rows:
-            if row.get('date', '') == today_str:
-                baseline_today = float(row.get('totalCost', row.get('cost', 0)))
-                break
+        baseline_today = float(daily_data.get('overview', {}).get('cost', 0))
     except Exception:
         pass
 
@@ -244,7 +236,7 @@ status_line = (
 )
 
 context = (
-    f"ccusage budget status at session start — {status_line}. "
+    f"codeburn budget status at session start — {status_line}. "
     f"Today's spend before this session: \${baseline_today:.4f}. "
     f"Budget resets on the 1st of each month."
 )

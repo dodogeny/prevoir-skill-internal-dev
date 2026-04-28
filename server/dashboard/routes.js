@@ -91,37 +91,30 @@ function fmtBytes(bytes) {
 }
 
 // ── Claude budget helper ──────────────────────────────────────────────────────
-// Cost is calculated from local token counts via ccusage (labelled "ccusage calc'd").
+// Cost is calculated from local token counts via codeburn (labelled "codeburn calc'd").
 
 let _budgetCache    = null;
 let _budgetCachedAt = 0;
 const BUDGET_CACHE_MS = 120 * 1000;
 
-// Fetch token breakdown from local ccusage (no network, reads JSONL files).
-function fetchCcusageMonthly() {
-  const candidates = [
-    'ccusage',
-    '/opt/homebrew/bin/ccusage',
-    '/usr/local/bin/ccusage',
-    process.env.HOME ? `${process.env.HOME}/.npm-global/bin/ccusage` : null,
-  ].filter(Boolean);
+// Fetch monthly spend from local codeburn (no network, reads JSONL files).
+function fetchCodeburnMonthly() {
+  const { execFile } = require('child_process');
+  const now        = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const today      = now.toISOString().slice(0, 10);
 
   return new Promise(resolve => {
-    const tryNext = i => {
-      if (i >= candidates.length) return resolve(null);
-      const { execFile } = require('child_process');
-      execFile(candidates[i], ['monthly', '--json'], { timeout: 10000, env: process.env }, (err, stdout) => {
-        if (err || !stdout || !stdout.trim()) return tryNext(i + 1);
+    execFile(
+      'npx', ['--yes', 'codeburn@latest', 'report', '--from', monthStart, '--to', today, '--format', 'json'],
+      { timeout: 30000, env: process.env },
+      (err, stdout) => {
+        if (err || !stdout || !stdout.trim()) return resolve(null);
         try {
-          const raw       = JSON.parse(stdout);
-          const rows      = Array.isArray(raw) ? raw : (raw.monthly || []);
-          const thisMonth = new Date().toISOString().slice(0, 7);
-          const entry     = rows.find(r => r.month === thisMonth) || rows[rows.length - 1] || null;
-          resolve(entry);
-        } catch (_) { tryNext(i + 1); }
-      });
-    };
-    tryNext(0);
+          resolve(JSON.parse(stdout));
+        } catch (_) { resolve(null); }
+      }
+    );
   });
 }
 
@@ -133,8 +126,8 @@ function getBudgetStatus() {
   const budget    = parseFloat(process.env.PRX_MONTHLY_BUDGET || '0') || null;
   const thisMonth = new Date().toISOString().slice(0, 7);
 
-  return fetchCcusageMonthly().then(ccEntry => {
-    const available = ccEntry != null;
+  return fetchCodeburnMonthly().then(cbData => {
+    const available = cbData != null;
     if (!available) {
       const fallback = { available: false, spent: null, budget, remaining: null, pct: null, month: thisMonth, source: 'unavailable', tokens: null };
       _budgetCache    = fallback;
@@ -142,26 +135,27 @@ function getBudgetStatus() {
       return fallback;
     }
 
-    const spent     = parseFloat(ccEntry?.totalCost ?? 0);
-    const source    = 'ccusage-calculated';
+    const spent     = parseFloat(cbData?.overview?.cost ?? 0);
+    const source    = 'codeburn-calculated';
     const remaining = budget != null ? Math.max(0, budget - spent) : null;
     const pct       = budget ? Math.min(100, Math.round((spent / budget) * 100)) : null;
-    const month     = ccEntry?.month || thisMonth;
+    const month     = thisMonth;
 
-    // Token summary from ccusage (always local)
-    const tokens = ccEntry ? {
-      input:         ccEntry.inputTokens          || 0,
-      output:        ccEntry.outputTokens         || 0,
-      cacheCreation: ccEntry.cacheCreationTokens  || 0,
-      cacheRead:     ccEntry.cacheReadTokens      || 0,
-      total:         ccEntry.totalTokens          || 0,
-      calculated:    parseFloat(ccEntry.totalCost ?? 0),
-      models:        (ccEntry.modelBreakdowns || []).map(m => ({
-        name: m.modelName, cost: parseFloat(m.cost ?? 0),
+    // Token summary from codeburn (always local)
+    const models = cbData?.models || [];
+    const tokens = {
+      input:         models.reduce((s, m) => s + (m.inputTokens  || 0), 0),
+      output:        models.reduce((s, m) => s + (m.outputTokens || 0), 0),
+      cacheCreation: models.reduce((s, m) => s + (m.cacheCreationTokens || 0), 0),
+      cacheRead:     models.reduce((s, m) => s + (m.cacheReadTokens     || 0), 0),
+      total:         models.reduce((s, m) => s + (m.totalTokens  || 0), 0),
+      calculated:    spent,
+      models:        models.map(m => ({
+        name: m.model || m.modelName, cost: parseFloat(m.cost ?? 0),
         input: m.inputTokens || 0, output: m.outputTokens || 0,
         cacheRead: m.cacheReadTokens || 0, cacheCreate: m.cacheCreationTokens || 0,
       })),
-    } : null;
+    };
 
     const result = { available: true, spent, budget, remaining, pct, month, source, tokens };
     _budgetCache    = result;
@@ -361,12 +355,12 @@ function tokenCell(usage) {
   if (!usage) return '<span style="color:#ccc">—</span>';
   const { inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, costUsd, actualCostUsd } = usage;
 
-  // Build cost line — prefer ccusage actual cost, fall back to stream-json estimate
+  // Build cost line — prefer codeburn actual cost, fall back to stream-json estimate
   let costHtml = '';
   if (actualCostUsd != null) {
     costHtml = `<div style="display:flex;align-items:center;gap:5px">` +
       `<span style="font-size:.85rem;font-weight:700;color:#1a1a2e">$${actualCostUsd.toFixed(4)}</span>` +
-      `<span style="font-size:.66rem;font-weight:600;padding:1px 5px;border-radius:4px;background:#dbeafe;color:#1d4ed8">ccusage</span>` +
+      `<span style="font-size:.66rem;font-weight:600;padding:1px 5px;border-radius:4px;background:#dbeafe;color:#1d4ed8">codeburn</span>` +
       `</div>`;
     if (costUsd != null) {
       costHtml += `<div style="font-size:.72rem;color:#9ca3af">est. $${costUsd.toFixed(4)}</div>`;
@@ -380,7 +374,7 @@ function tokenCell(usage) {
     `Input: ${inputTokens.toLocaleString()}`,
     `Output: ${outputTokens.toLocaleString()}`,
     cacheReadTokens > 0 ? `Cache read: ${cacheReadTokens.toLocaleString()}` : '',
-    actualCostUsd != null ? `ccusage cost: $${actualCostUsd.toFixed(6)}` : '',
+    actualCostUsd != null ? `codeburn cost: $${actualCostUsd.toFixed(6)}` : '',
     costUsd       != null ? `Stream est.: $${costUsd.toFixed(6)}`         : '',
   ].filter(Boolean).join(' · ');
 
@@ -779,7 +773,7 @@ function renderDashboard(stats, budget) {
               ? `<span class="info-val" style="color:${budgetPctColor}">$${(b.remaining||0).toFixed(2)} left</span>
                  <span style="font-size:.7rem;color:#b0b7c3">$${(b.spent||0).toFixed(2)} / $${b.budget.toFixed(2)} &middot; ⚪ calc</span>`
               : `<span class="info-val">$${(b.spent||0).toFixed(2)} spent</span>
-                 <span style="font-size:.7rem;color:#b0b7c3">⚪ ccusage calc'd</span>`)
+                 <span style="font-size:.7rem;color:#b0b7c3">⚪ codeburn calc'd</span>`)
           : `<span class="info-val muted">unavailable</span>`}
       </div>
     </div>
@@ -799,7 +793,7 @@ function renderDashboard(stats, budget) {
         <div>
           <div style="display:flex;align-items:center;gap:.4rem">
             <div class="lbl" style="color:${budgetPctColor};opacity:.8">Claude Budget &mdash; ${monthLabel}</div>
-            <span style="font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:4px;background:#f3f4f6;color:#6b7280;white-space:nowrap" title="Calculated from token counts × pricing — may differ from actual billing">ccusage calc'd</span>
+            <span style="font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:4px;background:#f3f4f6;color:#6b7280;white-space:nowrap" title="Calculated from token counts × pricing — may differ from actual billing">codeburn calc'd</span>
           </div>
           <div style="font-size:1.55rem;font-weight:700;color:${budgetPctColor};line-height:1.1;margin-top:3px">
             ${b.budget
@@ -816,7 +810,7 @@ function renderDashboard(stats, budget) {
       </div>
       <div style="font-size:.72rem;color:${budgetPctColor};opacity:.75;margin-bottom:.45rem">$${(b.spent||0).toFixed(2)} spent of $${b.budget.toFixed(2)} budget</div>` : `
       <div style="font-size:.72rem;color:${budgetPctColor};opacity:.75;margin-bottom:.45rem">Set PRX_MONTHLY_BUDGET in Settings to track remaining</div>`}
-      <!-- token breakdown from ccusage -->
+      <!-- token breakdown from codeburn -->
       ${b.tokens ? `
       <div style="border-top:1px solid ${budgetPctColor}18;padding-top:.4rem;display:flex;flex-wrap:wrap;gap:.3rem .7rem">
         <span style="font-size:.7rem;color:${budgetPctColor};opacity:.75" title="Input tokens">${fmtTokensK(b.tokens.input)} in</span>

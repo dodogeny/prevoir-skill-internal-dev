@@ -226,7 +226,7 @@ else
   fi
 fi
 
-# ── 2. Node.js (ccusage) ──────────────────────────────────────────────────────
+# ── 2. Node.js + codeburn ─────────────────────────────────────────────────────
 
 step "2/7  Node.js  (budget tracking + Prevoyant Server)  [required]"
 
@@ -274,6 +274,18 @@ else
   else
     err "Node.js installation failed. Install from https://nodejs.org then re-run setup."
     impact "Token budget tracking and Prevoyant Server unavailable until Node.js is installed"
+  fi
+fi
+
+# Install codeburn globally for budget tracking
+if locate_npx &>/dev/null; then
+  if command -v codeburn &>/dev/null 2>&1; then
+    ok "codeburn already installed ($(codeburn --version 2>/dev/null || echo 'found'))"
+  else
+    info "Installing codeburn globally..."
+    npm install -g codeburn 2>&1 | tail -3 \
+      && ok "codeburn installed" \
+      || err "codeburn installation failed — budget tracking will fall back to npx auto-download on first use"
   fi
 fi
 
@@ -464,7 +476,8 @@ path = sys.argv[1]
 config = {
     "permissions": {
         "allow": [
-            "Bash(npx --yes ccusage@latest *)",
+            "Bash(npx --yes codeburn@latest *)",
+            "Bash(codeburn *)",
             "Bash(bash scripts/check-budget.sh)",
             "Bash(bash .claude/load-env.sh)"
         ]

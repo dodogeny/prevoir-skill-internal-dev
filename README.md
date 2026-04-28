@@ -25,7 +25,7 @@ Invoke the skill with a Jira ticket key and Claude runs a structured multi-step 
 9. **Propose the fix** — code changes anchored to the Root Cause Statement; Morgan fix review; optional apply to branch
 10. **Impact analysis** — usage reference search, layer-by-layer impact table, regression risks, retest checklist
 11. **Change summary** — files touched, commit message, PR description template ready to paste
-12. **Session stats** — elapsed time, actual token usage and cost via ccusage (falls back to estimation if Node.js unavailable)
+12. **Session stats** — elapsed time, actual token usage and cost via codeburn (falls back to estimation if Node.js unavailable)
 13. **PDF report** — full-detail report saved to `CLAUDE_REPORT_DIR`; emailed if `PRX_EMAIL_TO` is set
 14. **Update KB** — write session record; push to shared repo if distributed
 15. **Bryan's retrospective** — Scrum Master audits token spend, flags process friction, proposes one SKILL.md improvement; unanimous team vote; pushes to main after `PRX_SKILL_UPGRADE_MIN_SESSIONS` sessions
@@ -39,7 +39,7 @@ Invoke the skill with a Jira ticket key and Claude runs a structured multi-step 
 5. **Fetch code changes** — locate the feature branch; run `git diff` to retrieve the full changeset
 6. **Engineering Panel review** — same four-person team as Dev Mode, now operating as reviewers: Alex (code quality), Sam (logic + acceptance criteria), Jordan (20-pattern defensive checklist), Riley (test coverage); Morgan scores and delivers a binding verdict
 7. **Consolidated findings** — Critical/Major/Minor issues with `file:line` and fix recommendations; Positives; Conditions for Approval
-8. **Session stats** — elapsed time, actual token usage and cost via ccusage (falls back to estimation if Node.js unavailable)
+8. **Session stats** — elapsed time, actual token usage and cost via codeburn (falls back to estimation if Node.js unavailable)
 9. **PDF review report** — saved as `{TICKET_KEY}-review.pdf` in `CLAUDE_REPORT_DIR`
 10. **Update KB** — record review verdict, confirmed rules, pattern bumps; push if distributed
 11. **Bryan's retrospective** — same as Dev Mode; token audit uses review session stats
@@ -247,7 +247,7 @@ Set `PRX_EMAIL_TO` to enable. Leave it unset to disable email entirely.
 | `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` | `N` | Set to `Y` to activate Bryan's retrospective (Step 14 / R10). Disabled by default. |
 | `PRX_SKILL_UPGRADE_MIN_SESSIONS` | `3` | Sessions with an approved change before Bryan pushes to the plugin repo's main branch. Set to `1` to push after every approved session. |
 | `PRX_SKILL_COMPACTION_INTERVAL` | `10` | Sessions between full SKILL.md compaction passes. On compaction sessions Bryan deep-reviews the entire file to eliminate redundancy and compress verbose prose; requires all five team members to approve. |
-| `PRX_MONTHLY_BUDGET` | `20.00` | Monthly Claude subscription budget in USD. Actual spend is measured via [ccusage](https://www.npmjs.com/package/ccusage), which reads Claude Code's local JSONL logs — no network call, no auth. Checked at every session start; Bryan uses the real figure in Step 14. Flags ⚠️ at >80% and ❌ at ≥100%. Budget resets on the 1st of each month. |
+| `PRX_MONTHLY_BUDGET` | `20.00` | Monthly Claude subscription budget in USD. Actual spend is measured via [codeburn](https://github.com/getagentseal/codeburn), which reads Claude Code's local JSONL logs — no network call, no auth. Checked at every session start; Bryan uses the real figure in Step 14. Flags ⚠️ at >80% and ❌ at ≥100%. Budget resets on the 1st of each month. |
 
 ### Automation (optional)
 
@@ -316,7 +316,7 @@ Set `PRX_NOTIFY_ENABLED=Y` to enable. Requires `PRX_EMAIL_TO` to be set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PRX_MONTHLY_BUDGET` | — | Monthly budget in USD. The dashboard tracks spend against this limit using ccusage local token calculation (labelled "ccusage calc'd"). |
+| `PRX_MONTHLY_BUDGET` | — | Monthly budget in USD. The dashboard tracks spend against this limit using codeburn local token calculation (labelled "codeburn calc'd"). |
 
 ---
 
@@ -341,9 +341,9 @@ The skill generates reports via pandoc → Chrome headless → HTML fallback (tr
 
 **HTML fallback:** saves a styled `.html` file — open in any browser and print to PDF.
 
-### Node.js (token budget tracking)
+### Node.js + codeburn (token budget tracking)
 
-`npx` (bundled with Node.js) runs [ccusage](https://www.npmjs.com/package/ccusage) to measure actual Claude token spend. **ccusage is downloaded automatically on first use** — no `npm install` needed. Node.js itself must be present.
+`npx` (bundled with Node.js) runs [codeburn](https://github.com/getagentseal/codeburn) to measure actual Claude token spend. **codeburn is installed globally by `setup.sh`** and falls back to `npx --yes codeburn@latest` on first use. Node.js itself must be present.
 
 | Platform | Command |
 |----------|---------|
@@ -544,7 +544,7 @@ An optional Node.js service that runs alongside the plugin as an always-on ambie
 | **8** | Propose fix anchored to Root Cause/Enhancement Statement; Morgan fix review; optional apply to branch |
 | **9** | Impact analysis — usage reference search, layer-by-layer impact table, regression risks, retest checklist |
 | **10** | Change summary — files touched, commit message, PR description template |
-| **11** | Session stats — elapsed time, actual token usage and cost delta via ccusage (fallback: manual estimation) |
+| **11** | Session stats — elapsed time, actual token usage and cost delta via codeburn (fallback: manual estimation) |
 | **12** | Generate PDF report → save to `CLAUDE_REPORT_DIR`; email if `PRX_EMAIL_TO` is set |
 | **13** | Write session record to KB; push if distributed |
 
@@ -559,7 +559,7 @@ An optional Node.js service that runs alongside the plugin as an always-on ambie
 | **R4** | Locate feature branch (`Feature/{TICKET_KEY}_*`), run `git diff` to retrieve full changeset |
 | **R5** | Engineering Panel code review — same four-person team; Alex (code quality), Sam (logic + acceptance criteria), Jordan (20-pattern defensive checklist), Riley (test coverage); Morgan scores and delivers binding verdict |
 | **R6** | Consolidated findings — Critical/Major/Minor issues with `file:line`, fix recommendations, Positives, Conditions for Approval |
-| **R7** | Session stats — same as Step 11 (ccusage actual data, fallback: estimation) |
+| **R7** | Session stats — same as Step 11 (codeburn actual data, fallback: estimation) |
 | **R8** | PDF review report |
 | **R9** | Update KB with review findings; push if distributed |
 
@@ -613,7 +613,7 @@ Story points = **Complexity + Risk + Repetition** (not hours). Scale: 1 · 2 · 
 │   ├── setup.sh                  # One-shot prerequisite installer (macOS / Linux / WSL / Git Bash)
 │   ├── setup.ps1                 # One-shot prerequisite installer (Windows — PowerShell)
 │   ├── setup.cmd                 # One-shot prerequisite installer (Windows — CMD / double-click)
-│   ├── check-budget.sh           # SessionStart hook: ccusage monthly budget check + session baseline capture
+│   ├── check-budget.sh           # SessionStart hook: codeburn monthly budget check + session baseline capture
 │   ├── poll-jira.sh              # Jira polling script (macOS / Linux / Windows WSL)
 │   ├── com.prevoyant.poll-jira.plist  # macOS launchd schedule template
 │   ├── .jira-credentials.example # Credentials template
@@ -857,7 +857,7 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 - **Health Monitor (Watchdog):** An optional in-process background thread (`workers/healthMonitor.js`) that polls `GET /health` on a configurable interval and sends an urgent email alert when the server stops responding. Enabled via `PRX_WATCHDOG_ENABLED=Y` in Settings › Health Monitor. Configurable check interval (`PRX_WATCHDOG_INTERVAL_SECS`, default 60 s) and consecutive-failure threshold before alerting (`PRX_WATCHDOG_FAIL_THRESHOLD`, default 3). Sends a recovery email when the server comes back up. Planned shutdowns via `stop.sh`, dashboard restart, or `SIGTERM`/`SIGINT` send a graceful-stop signal to the thread so no false DOWN alert is fired. Uses the SMTP credentials already configured in Email Delivery — no extra dependencies. Note: as an in-process thread it shares the process lifecycle; a hard OS kill (`SIGKILL` / OOM) cannot be caught by any in-process solution.
 - **Activity Tracker:** New page at `/dashboard/activity` (accessible via the Activity link in the dashboard header). Records every significant server event across 19 event types: ticket lifecycle (queued, started, completed, failed, interrupted, retrying, scheduled, deleted, prioritized, re-run), pipeline stage transitions, Jira webhook events (received or skipped with reason), Jira poll runs (`poll_triggered` with trigger label), server starts, settings saves, and KB export/import. Each event captures timestamp, event type, ticket key, actor (system/user/jira), and structured details. Three live Chart.js graphs show events per hour/day/month (toggled), tickets processed over 30 days, and token cost (USD) over 30 days. Filterable table by event type (all 19 types always shown regardless of history), ticket key, actor, and date range. History is persisted to `~/.prevoyant/server/activity-log.json` (within the server-specific subfolder) and survives server restarts with no data loss. Legacy `activity-log.json` at the old path is auto-migrated on first start.
 - **Disk Monitor:** An optional in-process background thread (`workers/diskMonitor.js`) that tracks the total size of `~/.prevoyant/` against a configurable size quota (`PRX_PREVOYANT_MAX_SIZE_MB`, default 500 MB). Enabled via `PRX_DISK_MONITOR_ENABLED=Y` in Settings › Disk Monitor. Configurable check interval (`PRX_DISK_MONITOR_INTERVAL_MINS`, default 60) and cleanup interval (`PRX_DISK_CLEANUP_INTERVAL_DAYS`, default 7 days). An alert fires when the folder reaches `PRX_DISK_CAPACITY_ALERT_PCT`% of the quota (default 80%, so at 400 MB of a 500 MB quota), giving early warning before the hard limit is hit (4-hour cooldown between repeated alerts). Overall machine disk capacity is still shown on the page for reference but does not drive alerting. When the cleanup interval elapses, a pending-cleanup notification appears on the **Disk Monitor page** (`/dashboard/disk`) — a dashboard **Approve Cleanup** button must be clicked before any files are deleted (no automatic deletion). An additional **Run Cleanup Now** button is always visible for on-demand house-cleaning. Cleanup removes session directories older than 30 days and trims `disk-log.json` and `activity-log.json` to their most recent entries. The page shows a `.prevoyant Quota` progress bar (MB used vs. quota), a two-column table of what will be cleaned vs. what is permanently protected (knowledge base files, reports, `.env`, recent sessions). Knowledge base files are safeguarded at the route level — the resolved KB path is checked before any deletion. History of snapshots is persisted to `~/.prevoyant/server/disk-log.json` (up to 720 entries, ~30 days at hourly checks) and `~/.prevoyant/server/disk-status.json`. A usage-over-time chart (Chart.js) shows `.prevoyant` folder size and overall disk utilisation. A Disk icon in the dashboard header nav turns orange when cleanup is pending.
-- **Claude Budget Tracker:** The dashboard shows real-time Claude API spend against the configured monthly budget (`PRX_MONTHLY_BUDGET`). Cost is calculated from local token counts via ccusage (labelled "ccusage calc'd"). Token breakdown (input / cache-read / cache-write / output tokens) is shown in the budget card for transparency. Displayed in two places: a **Budget item in the info strip** (colour-coded remaining) and a **Budget card** in the cards row with progress bar and per-token breakdown. Cache is 2 minutes; saving settings immediately busts the cache.
+- **Claude Budget Tracker:** The dashboard shows real-time Claude API spend against the configured monthly budget (`PRX_MONTHLY_BUDGET`). Cost is calculated from local token counts via codeburn (labelled "codeburn calc'd"). Token breakdown (input / cache-read / cache-write / output tokens) is shown in the budget card for transparency. Displayed in two places: a **Budget item in the info strip** (colour-coded remaining) and a **Budget card** in the cards row with progress bar and per-token breakdown. Cache is 2 minutes; saving settings immediately busts the cache.
 
 ### v1.2.3 — Prevoyant Server (Ambient Agent) + Path Rebranding
 
@@ -872,13 +872,13 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 ### v1.2.2 — Token Budget Tracking + Estimate Mode
 
 - **Estimate Mode:** New third mode (`/prevoyant:dev estimate PROJ-1234`) where the Engineering Panel runs Planning Poker using the Asana story points methodology — effort measured as **Complexity + Risk + Repetition**, not hours, on a modified Fibonacci scale (1·2·3·5·8·13·20·?). Before voting, each engineer loads the KB (`core-mental-map/`, `patterns.md`, `gotchas.md`, past ticket estimates, lessons learned) so votes are grounded in acquired system knowledge, not gut feel. All five engineers vote simultaneously, then debate is structured by dimension (which of the three factors is causing disagreement?) rather than just "your number is too high." Up to 3 rounds; Morgan makes a binding final call if still split. Confidence level (High/Medium/Low) reflects how many rounds were needed. Agreed points are recorded in the KB as `[ESTIMATE-PATTERN]` entries for future sessions.
-- **ccusage integration:** Actual Claude token spend is now measured using [ccusage](https://www.npmjs.com/package/ccusage), which reads Claude Code's local JSONL files offline — no network call, no auth required. ccusage is downloaded automatically via `npx --yes` on first use; Node.js is installed automatically if not present (Homebrew → nvm on macOS, apt/dnf → nvm on Linux).
+- **codeburn integration:** Actual Claude token spend is now measured using [codeburn](https://www.npmjs.com/package/codeburn), which reads Claude Code's local JSONL files offline — no network call, no auth required. codeburn is downloaded automatically via `npx --yes` on first use; Node.js is installed automatically if not present (Homebrew → nvm on macOS, apt/dnf → nvm on Linux).
 - **SessionStart budget check:** `scripts/check-budget.sh` runs at every session start. It captures a daily-spend baseline to `/tmp/.prx-session-start-spend` (used by Step 11 for per-session delta) and injects the current month's actual spend and budget status into Claude's session context. A system-level warning is surfaced when spend ≥ 80%.
-- **Step 11 / R7 / E7 — actual costs:** Instead of estimating tokens from content volume, Claude now runs `npx ccusage@latest daily --json` and subtracts the session-start baseline to report the exact cost of the current session. Manual estimation is retained as a fallback when Node.js is unavailable.
-- **Step 14 / R10 / E7 (Bryan) — realtime token stats via ccusage:** Bryan runs both `npx ccusage@latest monthly --json` (month-to-date spend) and `npx ccusage@latest daily --json` (session delta against the check-budget.sh baseline) to get authoritative figures from Claude Code's local JSONL logs — no network call, no auth. Monthly spend replaces the manual `process-efficiency.md` sum; session cost feeds the per-ticket rolling average used for TOKEN_ALERT and BUDGET_ALERT detection. Falls back to Step 11 figures and the manual sum if ccusage is unavailable.
+- **Step 11 / R7 / E7 — actual costs:** Instead of estimating tokens from content volume, Claude now runs `npx codeburn@latest report --format json` and subtracts the session-start baseline to report the exact cost of the current session. Manual estimation is retained as a fallback when Node.js is unavailable.
+- **Step 14 / R10 / E7 (Bryan) — realtime token stats via codeburn:** Bryan runs `npx codeburn@latest report --format json` (month-to-date spend and session delta against the check-budget.sh baseline) to get authoritative figures from Claude Code's local JSONL logs — no network call, no auth. Monthly spend replaces the manual `process-efficiency.md` sum; session cost feeds the per-ticket rolling average used for TOKEN_ALERT and BUDGET_ALERT detection. Falls back to Step 11 figures and the manual sum if codeburn is unavailable.
 - **Bryan — token intervention:** Bryan now records each ticket's cost against the 5-session rolling average. When a session costs > 150% of the rolling average (**TOKEN_ALERT**) or monthly spend exceeds 80% of `PRX_MONTHLY_BUDGET` (**BUDGET_ALERT**), Bryan escalates from the normal single-change proposal to **Intervention Mode**: identifies the top 3 most expensive steps, proposes a targeted SKILL.md reduction for each with dollar-savings estimates, and presents them as a ranked set for team consensus. BUDGET_ALERT additionally projects how many sessions remain before the monthly limit is breached at the current burn rate.
 - **Developer confirmation gate:** Before Bryan applies any approved SKILL.md change (Step 14c) or compaction pass (Step 14d), an interactive confirmation box shows the exact before/after wording, problem solved, process impact, and estimated token saving. The developer must explicitly confirm before any file is modified. Skipped automatically in `AUTO_MODE=Y`.
-- **Permissions:** `Bash(npx --yes ccusage@latest *)` added to `.claude/settings.local.json` allowlist so the budget check runs without prompts.
+- **Permissions:** `Bash(npx --yes codeburn@latest *)` added to `.claude/settings.local.json` allowlist so the budget check runs without prompts.
 - **Setup scripts:** `scripts/setup.sh` (macOS / Linux / WSL / Git Bash) and `scripts/setup.ps1` (Windows PowerShell) auto-detect the OS and install all prerequisites in one pass — `uvx`, Node.js, pandoc, `.env` copy, and `~/.claude/settings.json` marketplace registration. `scripts/setup.cmd` provides a double-click launcher for Windows CMD users. Installation cascades through available package managers (Homebrew → nvm on macOS; apt → dnf → nvm on Linux; winget → Chocolatey → Scoop on Windows) with graceful fallback and platform-specific manual instructions on failure.
 
 ### v1.2.1

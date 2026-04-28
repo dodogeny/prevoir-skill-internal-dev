@@ -172,7 +172,7 @@ function recordUsage(ticketKey, usage) {
   saveSession(ticketKey);
 }
 
-// Merges the ccusage-derived actual session cost into the existing tokenUsage object.
+// Merges the codeburn-derived actual session cost into the existing tokenUsage object.
 // Called after job completion, so tokenUsage may already have stream-json token counts.
 function recordActualCost(ticketKey, actualCostUsd) {
   const entry = tickets.get(ticketKey);

@@ -2813,28 +2813,28 @@ Provide a ready-to-paste pull request description:
 
 ### Step 11 — Session Stats
 
-Retrieve actual token usage from Claude Code's local logs via ccusage, then print the summary line.
+Retrieve actual token usage from Claude Code's local logs via codeburn, then print the summary line.
 
 **1. Run these two commands:**
 
 ```bash
-npx --yes ccusage@latest daily --json 2>/dev/null
+npx --yes codeburn@latest report --from $(date +%Y-%m-%d) --to $(date +%Y-%m-%d) --format json 2>/dev/null
 ```
 
 ```bash
 cat /tmp/.prx-session-start-spend 2>/dev/null || echo "none"
 ```
 
-**2. Compute this session's cost** — today's `totalCost` from the first command minus the `totalCost` from the baseline file (second command). If the baseline file is missing or today has no entry in it, use the full daily total as the session cost.
+**2. Compute this session's cost** — `overview.cost` from the first command minus `overview.cost` from the baseline file (second command). If the baseline file is missing, use the full daily total as the session cost.
 
 **3. Print the summary line:**
 
-If ccusage data is available:
+If codeburn data is available:
 ```
 {TICKET_KEY} | ~{N}m elapsed | ${session_cost} this session (${daily_total} today) | {input_tokens} in / {output_tokens} out (Sonnet 4.6)
 ```
 
-If ccusage is unavailable (npx not found or command fails), fall back to manual estimation from the volume of content processed (Jira fields, attachments, file reads, analysis). Label estimates with `~`:
+If codeburn is unavailable (npx not found or command fails), fall back to manual estimation from the volume of content processed (Jira fields, attachments, file reads, analysis). Label estimates with `~`:
 ```
 {TICKET_KEY} | ~{N}m elapsed | ~{X} in / ~{Y} out tokens | est. cost ${Z} (Sonnet 4.6)
 ```
@@ -3616,23 +3616,22 @@ Bryan runs after every Dev Mode session, immediately after Step 13h. Bryan is a 
 
 Before running the audit, Bryan:
 
-**A. Gets realtime token stats from ccusage:**
+**A. Gets realtime token stats from codeburn:**
 
-ccusage reads Claude Code's local JSONL logs — no network call, no auth required. Run both commands:
+codeburn reads Claude Code's local JSONL logs — no network call, no auth required. Run this command:
 
 ```bash
-npx --yes ccusage@latest monthly --json 2>/dev/null   # month-to-date spend
-npx --yes ccusage@latest daily   --json 2>/dev/null   # today's spend (for session delta)
+npx --yes codeburn@latest report --from $(date +%Y-%m-%01) --to $(date +%Y-%m-%d) --format json 2>/dev/null   # month-to-date spend
 ```
 
-- **Monthly spend** — current calendar month's `totalCost` (or `cost`) from the monthly command.
-- **Session cost** — today's `totalCost` from the daily command minus the session-start baseline written by `scripts/check-budget.sh` to `/tmp/.prx-session-start-spend`. If the baseline file is missing, use the session cost already computed in Step 11 (which ran the same calculation).
+- **Monthly spend** — `overview.cost` from the command output.
+- **Session cost** — `overview.cost` from a same-day report minus the session-start baseline written by `scripts/check-budget.sh` to `/tmp/.prx-session-start-spend`. If the baseline file is missing, use the session cost already computed in Step 11 (which ran the same calculation).
 
-If ccusage is unavailable (npx not found or command fails): fall back to the session cost figure from Step 11 and the manual sum of `cost: $N` values from all `[S-NNN]` rows in `shared/process-efficiency.md` for the current month. Label fallback figures with `~`.
+If codeburn is unavailable (npx not found or command fails): fall back to the session cost figure from Step 11 and the manual sum of `cost: $N` values from all `[S-NNN]` rows in `shared/process-efficiency.md` for the current month. Label fallback figures with `~`.
 
 **B. Then reads `shared/process-efficiency.md` for:**
 
-1. **Monthly budget** — use the actual ccusage monthly spend (or the manual sum as fallback). If spend > 80% of `PRX_MONTHLY_BUDGET`, flag ⚠️ and note the remaining headroom. If spend ≥ 100%, flag ❌ and state that clearly in the token audit.
+1. **Monthly budget** — use the actual codeburn monthly spend (or the manual sum as fallback). If spend > 80% of `PRX_MONTHLY_BUDGET`, flag ⚠️ and note the remaining headroom. If spend ≥ 100%, flag ❌ and state that clearly in the token audit.
 2. **Backlog** — note any HIGH-priority items. If the current session produced evidence for a HIGH item, it gets priority over new observations.
 3. **Blockers** — increment the count for any blocker that recurred this session. Auto-promote to HIGH backlog if count reaches 3.
 4. **Impact check** — if last session had an approved change, compare this session's cost against the pre-change baseline. Record the delta in the backlog row.
@@ -4385,7 +4384,7 @@ If there are **Critical issues**, confirm:
 
 ### Step R7 — Session Stats
 
-Same procedure as Step 11 in Dev Mode — use ccusage daily data and the session-start baseline, falling back to manual estimation if unavailable. Print the summary line in the same format.
+Same procedure as Step 11 in Dev Mode — use codeburn daily data and the session-start baseline, falling back to manual estimation if unavailable. Print the summary line in the same format.
 
 ---
 
@@ -5087,7 +5086,7 @@ what-would-change: {conditions that would shift the estimate}
 **Skip condition:** Same as Step 14 — if `PRX_INCLUDE_SM_IN_SESSIONS_ENABLED` is not `Y`/`YES`/`true`, skip entirely.
 
 Identical to Step 14 in Dev Mode with these differences:
-- Token audit: run `npx --yes ccusage@latest daily --json` and compute session delta from baseline (same as Step 11)
+- Token audit: run `npx --yes codeburn@latest report --from $(date +%Y-%m-%d) --to $(date +%Y-%m-%d) --format json` and compute session delta from baseline (same as Step 11)
 - DoD check covers Steps E0–E7
 - Process audit focuses on estimation quality: Did engineers cite KB evidence or rely on gut feel? Were the dimension drivers grounded in system knowledge? Were debate rounds substantive or circular? Did the existing Jira value anchor any votes?
 - Session Log row format:

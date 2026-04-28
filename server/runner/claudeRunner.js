@@ -8,33 +8,23 @@ const config      = require('../config/env');
 const tracker     = require('../dashboard/tracker');
 const stages      = require('../dashboard/stages.json');
 
-// ── ccusage cost snapshot ─────────────────────────────────────────────────────
-// Returns today's cumulative cost in USD from ccusage's JSONL-backed daily report,
-// or null if ccusage / Node.js is unavailable.
+// ── codeburn cost snapshot ────────────────────────────────────────────────────
+// Returns today's cumulative cost in USD from codeburn's local report,
+// or null if codeburn / Node.js is unavailable.
 
-function getCcusageDailyCost() {
-  // Prefer the npx already in PATH; fall back to common install locations.
-  const npxCandidates = [
-    'npx',
-    '/opt/homebrew/bin/npx',
-    '/usr/local/bin/npx',
-    process.env.HOME && `${process.env.HOME}/.nvm/versions/node`,
-  ].filter(Boolean);
-
-  const npxBin = npxCandidates[0]; // execFile rejects gracefully if missing
+function getCodeburnDailyCost() {
+  const npxBin = 'npx';
+  const today = new Date().toISOString().slice(0, 10);
 
   return new Promise(resolve => {
     execFile(
-      npxBin, ['--yes', 'ccusage@latest', 'daily', '--json'],
+      npxBin, ['--yes', 'codeburn@latest', 'report', '--from', today, '--to', today, '--format', 'json'],
       { timeout: 30000, env: process.env },
       (err, stdout) => {
         if (err || !stdout || !stdout.trim()) return resolve(null);
         try {
-          const raw  = JSON.parse(stdout);
-          const rows = Array.isArray(raw) ? raw : (raw.data || raw.daily || []);
-          const today = new Date().toISOString().slice(0, 10);
-          const entry = rows.find(r => r.date === today);
-          const cost  = entry ? parseFloat(entry.totalCost ?? entry.cost ?? 0) : 0;
+          const data = JSON.parse(stdout);
+          const cost = parseFloat(data?.overview?.cost ?? 0);
           resolve(isNaN(cost) ? null : cost);
         } catch (_) { resolve(null); }
       }
@@ -188,7 +178,7 @@ function killProcess(ticketKey) {
 
 async function runClaudeAnalysis(ticketKey, mode = 'dev') {
   // Snapshot daily spend before spawning so we can diff after completion.
-  const costBefore = await getCcusageDailyCost();
+  const costBefore = await getCodeburnDailyCost();
 
   let runError = null;
   try {
@@ -257,13 +247,13 @@ async function runClaudeAnalysis(ticketKey, mode = 'dev') {
     runError = err;
   }
 
-  // Diff ccusage daily cost to get actual spend for this job.
+  // Diff codeburn daily cost to get actual spend for this job.
   // Runs even on failure/kill so partial costs are still captured.
-  const costAfter = await getCcusageDailyCost();
+  const costAfter = await getCodeburnDailyCost();
   if (costBefore !== null && costAfter !== null) {
     const sessionCost = parseFloat(Math.max(0, costAfter - costBefore).toFixed(6));
     tracker.recordActualCost(ticketKey, sessionCost);
-    console.log(`[runner] ${ticketKey} ccusage cost: $${sessionCost.toFixed(6)}`);
+    console.log(`[runner] ${ticketKey} codeburn cost: $${sessionCost.toFixed(6)}`);
   }
 
   if (runError) throw runError;
