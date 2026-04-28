@@ -32,6 +32,38 @@ function getCodeburnDailyCost() {
   });
 }
 
+// Returns month-to-date cost in USD, or null if unavailable.
+function getCodeburnMonthlyCost() {
+  const npxBin = 'npx';
+  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = today.slice(0, 8) + '01';
+
+  return new Promise(resolve => {
+    execFile(
+      npxBin, ['--yes', 'codeburn@latest', 'report', '--from', monthStart, '--to', today, '--format', 'json'],
+      { timeout: 30000, env: process.env },
+      (err, stdout) => {
+        if (err || !stdout || !stdout.trim()) return resolve(null);
+        try {
+          const data = JSON.parse(stdout);
+          const cost = parseFloat(data?.overview?.cost ?? 0);
+          resolve(isNaN(cost) ? null : cost);
+        } catch (_) { resolve(null); }
+      }
+    );
+  });
+}
+
+async function isBudgetExceeded() {
+  const budget = parseFloat(process.env.PRX_MONTHLY_BUDGET || '0');
+  if (!budget) return false;
+  const spent = await getCodeburnMonthlyCost();
+  return spent !== null && spent >= budget;
+}
+
+// Matches Anthropic billing / credit errors in process output
+const BILLING_ERROR_RE = /credit balance is too low|credit_balance_too_low|insufficient.*credit|billing.*error|subscription.*expired|account.*suspended|payment required/i;
+
 // Build a temp MCP config that uses mcp-atlassian with API-token auth.
 // When JIRA_URL + JIRA_USERNAME + JIRA_API_TOKEN are present in the env block,
 // mcp-atlassian uses basic auth instead of OAuth — no browser pop-up needed.
@@ -211,8 +243,25 @@ async function runClaudeAnalysis(ticketKey, mode = 'dev') {
       }
     );
 
-    const state = { proc, killed: false };
+    const state = { proc, killed: false, killReason: null };
     activeProcesses.set(ticketKey, state);
+
+    // Periodic budget check — stops the job if monthly spend hits the configured limit.
+    const budgetCheckInterval = setInterval(async () => {
+      if (state.killed) { clearInterval(budgetCheckInterval); return; }
+      try {
+        const exceeded = await isBudgetExceeded();
+        if (exceeded && !state.killed) {
+          console.log(`[runner] ${ticketKey} — monthly budget exceeded, stopping job`);
+          state.killReason = 'budget_exceeded';
+          tracker.appendOutput(ticketKey, '[system] Job stopped: monthly budget limit reached.');
+          state.killed = true;
+          proc.kill('SIGTERM');
+          setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, 3000);
+          clearInterval(budgetCheckInterval);
+        }
+      } catch (_) {}
+    }, 60000);
 
     // Line buffer — stdout arrives in 64 KB chunks; large JSON events span multiple chunks.
     // Accumulate bytes until we have a complete newline-terminated line before parsing.
@@ -229,14 +278,23 @@ async function runClaudeAnalysis(ticketKey, mode = 'dev') {
       if (text) {
         console.error(`[${ticketKey}] stderr: ${text}`);
         tracker.appendOutput(ticketKey, `[stderr] ${text}`);
+        if (!state.killed && BILLING_ERROR_RE.test(text)) {
+          console.log(`[runner] ${ticketKey} — billing error detected, stopping job`);
+          state.killReason = 'low_balance';
+          tracker.appendOutput(ticketKey, '[system] Job stopped: Anthropic account balance too low.');
+          state.killed = true;
+          proc.kill('SIGTERM');
+          setTimeout(() => { try { proc.kill('SIGKILL'); } catch (_) {} }, 3000);
+        }
       }
     });
 
     proc.on('close', code => {
+      clearInterval(budgetCheckInterval);
       activeProcesses.delete(ticketKey);
       if (lineBuf.trim()) processLine(ticketKey, lineBuf); // flush any partial line
       if (usingTempConfig) try { fs.unlinkSync(mcpConfig); } catch (_) {}
-      if (state.killed) reject(Object.assign(new Error('Process killed by user'), { killed: true }));
+      if (state.killed) reject(Object.assign(new Error('Process killed'), { killed: true, killReason: state.killReason || 'manual' }));
       else if (code === 0) resolve();
       else reject(new Error(`claude exited with code ${code}`));
     });

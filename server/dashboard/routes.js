@@ -237,6 +237,14 @@ const BASE_CSS = `
   .badge-interrupted  { background: #fff7ed; color: #9a3412; }
   .badge-scheduled    { background: #f3e8ff; color: #7e22ce; }
   .badge-retrying     { background: #fff7ed; color: #c2410c; }
+  .interrupt-banner { display:flex; align-items:flex-start; gap:.9rem; padding:1rem 1.25rem;
+                      border-radius:8px; border:1px solid; margin-bottom:1rem; }
+  .interrupt-banner-budget_exceeded, .interrupt-banner-low_balance {
+    background:#fef2f2; border-color:#fca5a5; color:#991b1b; }
+  .interrupt-banner-manual { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+  .interrupt-banner-server_restart { background:#f0f9ff; border-color:#bae6fd; color:#0c4a6e; }
+  .interrupt-banner strong { display:block; font-weight:600; margin-bottom:.25rem; font-size:.9rem; }
+  .interrupt-banner p { margin:0; font-size:.84rem; line-height:1.5; }
   .mode-badge { padding: 2px 8px; border-radius: 8px; font-size: 0.72rem; font-weight: 600; }
   .mode-dev      { background: #e0f2fe; color: #0369a1; }
   .mode-review   { background: #f3e8ff; color: #7e22ce; }
@@ -342,6 +350,26 @@ function modeBadge(mode) {
   if (mode === 'review')   return '<span class="mode-badge mode-review">Review</span>';
   if (mode === 'estimate') return '<span class="mode-badge mode-estimate">Estimate</span>';
   return '<span style="color:#ccc;font-size:0.82rem">—</span>';
+}
+
+function interruptReasonMessage(reason) {
+  switch (reason) {
+    case 'budget_exceeded':
+      return 'Monthly budget limit reached — the job was stopped automatically to prevent overspend. Increase <code>PRX_MONTHLY_BUDGET</code> in your <code>.env</code> or wait for the next billing cycle.';
+    case 'low_balance':
+      return 'Anthropic account balance too low — the API returned a billing error mid-run. Top up your account balance or check your subscription to continue.';
+    case 'server_restart':
+      return 'Server was restarted while this job was running. Re-run the ticket to resume.';
+    case 'manual':
+    default:
+      return 'Stopped manually by the user.';
+  }
+}
+
+function interruptBannerIcon(reason) {
+  const urgent = reason === 'budget_exceeded' || reason === 'low_balance';
+  const color = urgent ? '#dc2626' : reason === 'server_restart' ? '#0369a1' : '#ea580c';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px">${urgent ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'}</svg>`;
 }
 
 // ── Token usage cell ──────────────────────────────────────────────────────────
@@ -2743,6 +2771,16 @@ function renderDetail(ticket, warn, warnMode) {
       </div>
     </div>
 
+    <div id="interrupt-banner"
+         class="interrupt-banner interrupt-banner-${ticket.interruptReason || 'manual'}"
+         ${ticket.status !== 'interrupted' ? 'style="display:none"' : ''}>
+      ${interruptBannerIcon(ticket.interruptReason)}
+      <div>
+        <strong>Job Interrupted</strong>
+        <p class="interrupt-reason-text">${interruptReasonMessage(ticket.interruptReason)}</p>
+      </div>
+    </div>
+
     ${warn === 'seen' ? (() => {
       const safeKey = ticket.ticketKey.replace(/[^A-Za-z0-9_-]/g, '');
       const chosenMode = warnMode || ticket.mode || 'dev';
@@ -2935,6 +2973,24 @@ function renderDetail(ticket, warn, warnMode) {
           if (icon && data.statusIconHtml) icon.innerHTML = data.statusIconHtml;
         }
 
+        // Interrupt banner — show with reason when job is stopped mid-run
+        if (data.status === 'interrupted') {
+          const REASON_MSGS = {
+            budget_exceeded: 'Monthly budget limit reached — the job was stopped automatically to prevent overspend. Increase PRX_MONTHLY_BUDGET in your .env or wait for the next billing cycle.',
+            low_balance: 'Anthropic account balance too low — the API returned a billing error mid-run. Top up your account balance or check your subscription to continue.',
+            server_restart: 'Server was restarted while this job was running. Re-run the ticket to resume.',
+            manual: 'Stopped manually by the user.',
+          };
+          const banner = document.getElementById('interrupt-banner');
+          if (banner) {
+            const reason = data.interruptReason || 'manual';
+            banner.className = 'interrupt-banner interrupt-banner-' + reason;
+            const txt = banner.querySelector('.interrupt-reason-text');
+            if (txt) txt.textContent = REASON_MSGS[reason] || reason;
+            banner.style.display = '';
+          }
+        }
+
         // Stop polling once job is no longer active
         if (!ACTIVE.includes(data.status)) clearInterval(timer);
       }, 5000);
@@ -3100,6 +3156,7 @@ router.get('/ticket/:key/partial', (req, res) => {
 
   res.json({
     status: ticket.status,
+    interruptReason: ticket.interruptReason || null,
     statusIconHtml: (ICONS[ticket.status] || ICONS.queued)(22),
     pipelineHtml: stagePipelineHtml(stages),
     progressPct: stages.length ? Math.round(doneCount / stages.length * 100) : 0,

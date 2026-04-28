@@ -110,12 +110,14 @@ function loadSessions() {
         const entry = deserializeDates(raw);
         if (entry.status === 'running' || entry.status === 'queued' || entry.status === 'retrying') {
           entry.status = 'interrupted';
+          entry.interruptReason = 'server_restart';
           entry.completedAt = new Date();
           tickets.set(raw.ticketKey, entry);
           saveSession(raw.ticketKey);
         } else if (entry.status === 'scheduled' && entry.scheduledFor && entry.scheduledFor <= new Date()) {
           // Schedule was missed while server was offline
           entry.status = 'interrupted';
+          entry.interruptReason = 'server_restart';
           entry.completedAt = new Date();
           tickets.set(raw.ticketKey, entry);
           saveSession(raw.ticketKey);
@@ -212,7 +214,7 @@ function recordCompleted(ticketKey, success) {
   );
 }
 
-function recordInterrupted(ticketKey) {
+function recordInterrupted(ticketKey, reason = 'manual') {
   const entry = tickets.get(ticketKey);
   if (!entry) return;
   const now = new Date();
@@ -221,9 +223,9 @@ function recordInterrupted(ticketKey) {
     if (s.status === 'pending') return { ...s, status: 'skipped' };
     return s;
   });
-  tickets.set(ticketKey, { ...entry, completedAt: now, status: 'interrupted', stages });
+  tickets.set(ticketKey, { ...entry, completedAt: now, status: 'interrupted', interruptReason: reason, stages });
   saveSession(ticketKey);
-  activityLog.record('ticket_interrupted', ticketKey, 'user', { mode: entry.mode });
+  activityLog.record('ticket_interrupted', ticketKey, reason === 'manual' ? 'user' : 'system', { mode: entry.mode, reason });
 }
 
 // ── Stage tracking ────────────────────────────────────────────────────────────

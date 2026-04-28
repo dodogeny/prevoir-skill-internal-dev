@@ -48,8 +48,9 @@ function drain() {
       .catch(err => {
         if (err.killed) {
           retryCounts.delete(ticket);
-          tracker.recordInterrupted(ticket);
-          console.log(`[queue] ${ticket} stopped by user`);
+          const reason = err.killReason || 'manual';
+          tracker.recordInterrupted(ticket, reason);
+          console.log(`[queue] ${ticket} stopped — reason: ${reason}`);
           return;
         }
 
@@ -120,7 +121,7 @@ function killJob(ticketKey) {
   if (scheduledTimers.has(ticketKey)) {
     clearTimeout(scheduledTimers.get(ticketKey));
     scheduledTimers.delete(ticketKey);
-    tracker.recordInterrupted(ticketKey);
+    tracker.recordInterrupted(ticketKey, 'manual');
     console.log(`[queue] ${ticketKey} scheduled job cancelled by user`);
     return true;
   }
@@ -128,14 +129,14 @@ function killJob(ticketKey) {
     clearTimeout(retryTimers.get(ticketKey));
     retryTimers.delete(ticketKey);
     retryCounts.delete(ticketKey);
-    tracker.recordInterrupted(ticketKey);
+    tracker.recordInterrupted(ticketKey, 'manual');
     console.log(`[queue] ${ticketKey} retry cancelled by user`);
     return true;
   }
   const idx = queue.findIndex(j => j.ticketKey === ticketKey);
   if (idx !== -1) {
     queue.splice(idx, 1);
-    tracker.recordInterrupted(ticketKey);
+    tracker.recordInterrupted(ticketKey, 'manual');
     console.log(`[queue] ${ticketKey} removed from queue by user`);
     return true;
   }
