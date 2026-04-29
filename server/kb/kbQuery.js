@@ -4,7 +4,7 @@ const path    = require('path');
 const kbCache = require('./kbCache');
 
 // Resolve the schema once; it lives next to the plugin personas.
-const SCHEMA_PATH = path.resolve(__dirname, '../../plugin/prevoyant/kb-schema.json');
+const SCHEMA_PATH = path.resolve(__dirname, '../../plugin/config/kb-schema.json');
 
 let _schema = null;
 function loadSchema() {

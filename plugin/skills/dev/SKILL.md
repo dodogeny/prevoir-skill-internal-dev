@@ -250,7 +250,7 @@ _(Applies to `KB_MODE=distributed`.)_
     └── {developer}.md  (or .md.enc)   ← one file per developer (name from git config or PRX_DEVELOPER_NAME)
 ```
 
-**Persona definitions** (static, developer-editable): stored in the plugin at `plugin/prevoyant/personas/{agent}.md`. These files define each agent's voice, reasoning style, and priorities. Any developer may improve them. Each agent has a separate file, so concurrent edits to different agents never conflict.
+**Persona definitions** (static, developer-editable): stored in the plugin at `plugin/config/personas/{agent}.md`. These files define each agent's voice, reasoning style, and priorities. Any developer may improve them. Each agent has a separate file, so concurrent edits to different agents never conflict.
 
 **Personal memory** (dynamic, session-generated): stored in the KB at `{KB_WORK_DIR}/personas/memory/{agent}/{YYYYMMDD-TICKET}.md`. One file per session per agent — conflict-free by design since each session creates a unique timestamped file. In distributed mode, git auto-merges concurrent session files from different developers without conflicts.
 
@@ -1195,7 +1195,7 @@ This step runs in two phases. **Phase A** (sync + initialise) runs before Step 1
 Before running any Phase A disk operations, check whether the server has already pre-loaded KB content into this prompt:
 
 1. Look for `<!-- KB_PRELOADED schemaVersion=X.Y -->` near the top of this message.
-2. If found, read `plugin/prevoyant/kb-schema.json` and get its `schemaVersion` field.
+2. If found, read `plugin/config/kb-schema.json` and get its `schemaVersion` field.
 3. **Versions match → pre-load is valid:**
    - Output: `KB_STATUS: server pre-loaded (v{version}) — skipping Steps 0a and 0b disk reads.`
    - Skip Steps 0a and 0b entirely.
@@ -1515,13 +1515,13 @@ Each agent reads their own persona definition and personal memory before engagin
 **5a. Read persona definitions** from the plugin directory:
 
 ```
-plugin/prevoyant/personas/morgan.md
-plugin/prevoyant/personas/alex.md
-plugin/prevoyant/personas/sam.md
-plugin/prevoyant/personas/jordan.md
-plugin/prevoyant/personas/henk.md
-plugin/prevoyant/personas/riley.md
-plugin/prevoyant/personas/bryan.md
+plugin/config/personas/morgan.md
+plugin/config/personas/alex.md
+plugin/config/personas/sam.md
+plugin/config/personas/jordan.md
+plugin/config/personas/henk.md
+plugin/config/personas/riley.md
+plugin/config/personas/bryan.md
 ```
 
 If the plugin directory is not accessible, agents fall back to the inline persona descriptions in the Engineering Panel section of SKILL.md — session proceeds normally.
