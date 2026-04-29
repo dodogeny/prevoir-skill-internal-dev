@@ -2267,7 +2267,7 @@ function renderSettings(vals, flash) {
             <div class="bk-include-row">
               <label class="bk-inc-lbl">
                 <input type="checkbox" id="bk-inc-kb" checked ${!kb.kbExists ? 'disabled' : ''}>
-                Knowledge Base ${!kb.kbExists ? '<span style="color:#9ca3af">(not found)</span>' : ''}
+                Knowledge Base &amp; Agent Memory ${!kb.kbExists ? '<span style="color:#9ca3af">(not found)</span>' : ''}
               </label>
               <label class="bk-inc-lbl">
                 <input type="checkbox" id="bk-inc-sessions" ${kb.sessionFiles === 0 ? '' : 'checked'}>
