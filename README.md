@@ -854,17 +854,13 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 
 ## Changelog
 
-### v1.2.7 — Indexed Agent Memory (JSON + Redis)
+### v1.2.7 — Real-time KB Sync (Redis doorbell · Git mail carrier)
 
-- **Long-term memory index:** Agent session memories are now indexed into a searchable store instead of loading raw session file excerpts. On each new ticket, only the most relevant learnings, surprises, and running notes are injected — scored by Jira component and label overlap — replacing ~700 lines of raw per-agent excerpts with a compact ~20-line ranked table (~96% token reduction on the agent memory section).
+- **Live KB propagation across machines:** When a session completes on any machine, `server/kb/kbSync.js` does a `git push` (KB files travel to the private repo) then posts a ~100-byte notification to an [Upstash Redis](https://upstash.com/) stream — just `{ machine, ticket, commit }`. Every other connected machine is polling `XREAD` every 10 seconds (configurable); on a new notification it immediately does `git pull --rebase` and invalidates its local KB cache. Idle machines stay in sync between sessions so Step 0 KB queries always reflect the latest state. **No KB content ever touches Redis** — the stream is the doorbell, Git is the mail carrier.
 
-- **Dual backend:** Supports two storage backends. **JSON** (local, zero setup): stores the index at `~/.prevoyant/memory/index.json` — works out of the box as a single-machine fallback. **Redis** (team-shared): when `PRX_REDIS_ENABLED=Y`, all developers share one memory store across machines and parallel sessions, with component/label sorted-set indexes for sub-millisecond retrieval. Redis takes priority when connected; JSON serves as a hot-standby.
+- **Zero new npm dependencies:** The Upstash REST API is called with Node's built-in `https` module. A worker thread (`workers/kbSyncWorker.js`) runs the poll loop without blocking the main server process, following the same pattern as the existing health and disk monitors.
 
-- **Dashboard settings UI:** A new "Agent Memory" section in the server settings page exposes all memory configuration (`PRX_MEMORY_INDEX_ENABLED`, `PRX_MEMORY_LIMIT`, `PRX_REDIS_ENABLED`, `PRX_REDIS_URL`, `PRX_REDIS_PASSWORD`, `PRX_REDIS_PREFIX`, `PRX_REDIS_TTL_DAYS`) with a live connection test button and a status badge showing the active backend and indexed learning count.
-
-- **Automatic indexing:** The server indexes any new agent memory files written at session end (Step 13i) immediately after each Claude run. On startup it also sweeps for any previously unindexed files. Both operations are non-blocking and non-fatal.
-
-- **Configurable limit:** `PRX_MEMORY_LIMIT` (default: 15) controls how many indexed entries are injected per prompt. Lower values reduce token usage further.
+- **New config fields (all under `KNOWLEDGE BASE` in `.env`):** `PRX_REALTIME_KB_SYNC` (Y/N, default N), `PRX_UPSTASH_REDIS_URL`, `PRX_UPSTASH_REDIS_TOKEN`, `PRX_KB_SYNC_MACHINE` (hostname override), `PRX_KB_SYNC_POLL_SECS` (default 10). All fields are also editable from the dashboard Settings page. Free tier on Upstash is more than sufficient.
 
 ### v1.2.6 — Henk, Agent Personas & Personal Memory
 

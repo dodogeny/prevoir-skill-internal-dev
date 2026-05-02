@@ -1970,7 +1970,7 @@ const NOTIFY_EVENTS = [
 function renderSettings(vals, flash) {
   const v = k => vals[k] || '';
 
-  const kbKeys     = ['PRX_KB_MODE','PRX_SOURCE_REPO_URL','PRX_KNOWLEDGE_DIR','PRX_KB_REPO','PRX_KB_LOCAL_CLONE','PRX_KB_KEY'];
+  const kbKeys     = ['PRX_KB_MODE','PRX_SOURCE_REPO_URL','PRX_KNOWLEDGE_DIR','PRX_KB_REPO','PRX_KB_LOCAL_CLONE','PRX_KB_KEY','PRX_REALTIME_KB_SYNC','PRX_UPSTASH_REDIS_URL','PRX_UPSTASH_REDIS_TOKEN','PRX_KB_SYNC_MACHINE','PRX_KB_SYNC_POLL_SECS'];
   const memKeys    = ['PRX_MEMORY_INDEX_ENABLED','PRX_MEMORY_LIMIT','PRX_REDIS_ENABLED','PRX_REDIS_URL','PRX_REDIS_PASSWORD','PRX_REDIS_PREFIX','PRX_REDIS_TTL_DAYS'];
   const emailKeys  = ['PRX_EMAIL_TO','PRX_SMTP_HOST','PRX_SMTP_PORT','PRX_SMTP_USER','PRX_SMTP_PASS'];
   const bryanKeys  = ['PRX_INCLUDE_SM_IN_SESSIONS_ENABLED','PRX_SKILL_UPGRADE_MIN_SESSIONS','PRX_SKILL_COMPACTION_INTERVAL','PRX_MONTHLY_BUDGET'];
@@ -2230,6 +2230,18 @@ function renderSettings(vals, flash) {
           <div class="s-field span2">
             ${fld('PRX_KB_KEY','Encryption Key (distributed)','password',v('PRX_KB_KEY'),'your-strong-passphrase','AES-256-CBC passphrase for encrypting KB files. Optional. Never commit this value.')}
           </div>
+          <div class="s-field span2" style="border-top:1px solid #e5e7eb;padding-top:1rem;margin-top:.5rem">
+            <span class="s-label" style="font-weight:600">Real-time KB Sync <span style="font-size:10px;font-weight:400;color:#6b7280;margin-left:.4rem">Redis doorbell · Git mail carrier · <a href="https://upstash.com/" target="_blank" rel="noopener" style="color:#6b7280">upstash.com</a></span></span>
+            <span class="s-hint">Push/pull KB changes across machines the moment a session finishes. Redis carries only a ~100-byte notification (machine, ticket, commit). Git carries the actual KB files. Requires distributed mode.</span>
+          </div>
+          ${fld('PRX_REALTIME_KB_SYNC','Enable Real-time Sync','select',v('PRX_REALTIME_KB_SYNC') || 'N','','Requires PRX_KB_MODE=distributed and Upstash credentials below.',
+            [{v:'N',l:'N — disabled (default)'},{v:'Y',l:'Y — enabled'}])}
+          ${fld('PRX_UPSTASH_REDIS_URL','Upstash REST URL','text',v('PRX_UPSTASH_REDIS_URL'),'https://your-endpoint.upstash.io','REST endpoint from console.upstash.com → Database → REST API. Free tier is sufficient.')}
+          <div class="s-field">
+            ${fld('PRX_UPSTASH_REDIS_TOKEN','Upstash REST Token','password',v('PRX_UPSTASH_REDIS_TOKEN'),'your-token-here','REST token from console.upstash.com. Never commit this value.')}
+          </div>
+          ${fld('PRX_KB_SYNC_MACHINE','Machine Name','text',v('PRX_KB_SYNC_MACHINE'),require('os').hostname(),'Override hostname used in sync notifications. Useful in Docker or cloud VMs where hostname is unstable.')}
+          ${fld('PRX_KB_SYNC_POLL_SECS','Poll Interval (seconds)','text',v('PRX_KB_SYNC_POLL_SECS'),'10','How often each machine checks Redis for new KB updates. Default: 10.')}
         </div>
       </details>
 
@@ -3633,6 +3645,8 @@ router.post('/settings', express.urlencoded({ extended: false }), (req, res) => 
     'WEBHOOK_PORT', 'WEBHOOK_SECRET', 'WEBHOOK_POLL_INTERVAL_DAYS',
     'PRX_KB_MODE', 'PRX_SOURCE_REPO_URL', 'PRX_KNOWLEDGE_DIR',
     'PRX_KB_REPO', 'PRX_KB_LOCAL_CLONE', 'PRX_KB_KEY',
+    'PRX_REALTIME_KB_SYNC', 'PRX_UPSTASH_REDIS_URL', 'PRX_UPSTASH_REDIS_TOKEN',
+    'PRX_KB_SYNC_MACHINE', 'PRX_KB_SYNC_POLL_SECS',
     'CLAUDE_REPORT_DIR',
     'AUTO_MODE', 'FORCE_FULL_RUN', 'PRX_REPORT_VERBOSITY',
     'PRX_JIRA_PROJECT', 'PRX_ATTACHMENT_MAX_MB',

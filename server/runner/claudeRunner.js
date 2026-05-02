@@ -344,6 +344,15 @@ async function runClaudeAnalysis(ticketKey, mode = 'dev', ticketMeta = {}) {
   // Invalidate KB cache — Step 13 may have written new KB data.
   kbCache.invalidate();
 
+  // Push KB to private repo and ring the Redis doorbell so other machines pull.
+  // Fire-and-forget — sync failure must never fail a completed session.
+  try {
+    const kbSync = require('../kb/kbSync');
+    kbSync.notify(ticketKey).catch(e =>
+      console.warn(`[runner] ${ticketKey} — kb-sync notify failed: ${e.message}`)
+    );
+  } catch (_) { /* kbSync not available — skip silently */ }
+
   // Index any new agent memory files written during this session into the
   // long-term memory store (Redis + JSON). Runs even on failure so partial
   // learnings are captured. Non-fatal — a bad index never kills the runner.

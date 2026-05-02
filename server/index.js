@@ -42,6 +42,7 @@ app.use('/jira-events', jiraWebhook);
 let watchdogWorker  = null;
 let diskWorker      = null;
 let updateWorker    = null;
+let kbSyncWorker    = null;
 
 function startWatchdog() {
   if (process.env.PRX_WATCHDOG_ENABLED !== 'Y') return;
@@ -165,19 +166,66 @@ function stopUpdateChecker() {
   }
 }
 
-process.on('SIGTERM', () => { stopWatchdog(); stopDiskMonitor(); stopUpdateChecker(); setTimeout(() => process.exit(0), 600); });
-process.on('SIGINT',  () => { stopWatchdog(); stopDiskMonitor(); stopUpdateChecker(); setTimeout(() => process.exit(0), 600); });
+function startKbSync() {
+  if (process.env.PRX_REALTIME_KB_SYNC !== 'Y') return;
+  if (process.env.PRX_KB_MODE !== 'distributed') return;
+  if (kbSyncWorker) return;
+
+  const kbSync = require('./kb/kbSync');
+  const workerData = {
+    upstashUrl:   process.env.PRX_UPSTASH_REDIS_URL   || '',
+    upstashToken: process.env.PRX_UPSTASH_REDIS_TOKEN  || '',
+    kbDir:        kbSync.kbCloneDir(),
+    machineName:  kbSync.machineName(),
+    pollSecs:     parseInt(process.env.PRX_KB_SYNC_POLL_SECS || '10', 10),
+  };
+
+  kbSyncWorker = new Worker(
+    path.join(__dirname, 'workers', 'kbSyncWorker.js'),
+    { workerData }
+  );
+
+  kbSyncWorker.on('message', msg => {
+    if (msg?.type === 'kb-synced') {
+      // Another machine pushed — invalidate our local KB cache.
+      require('./kb/kbCache').invalidate();
+    }
+  });
+  kbSyncWorker.on('error', err =>
+    console.error('[kb-sync] Worker thread error:', err.message)
+  );
+  kbSyncWorker.on('exit', code => {
+    kbSyncWorker = null;
+    if (code !== 0) console.error(`[kb-sync] Worker exited with code ${code}`);
+  });
+
+  console.log(`[prevoyant-server] KB real-time sync active — polling every ${workerData.pollSecs}s (machine: ${workerData.machineName})`);
+}
+
+function stopKbSync() {
+  if (kbSyncWorker) {
+    kbSyncWorker.postMessage({ type: 'graceful-stop' });
+    kbSyncWorker = null;
+  }
+}
+
+process.on('SIGTERM', () => { stopWatchdog(); stopDiskMonitor(); stopUpdateChecker(); stopKbSync(); setTimeout(() => process.exit(0), 600); });
+process.on('SIGINT',  () => { stopWatchdog(); stopDiskMonitor(); stopUpdateChecker(); stopKbSync(); setTimeout(() => process.exit(0), 600); });
 
 // Reactively start/stop workers when settings are saved from the dashboard.
 // This avoids requiring a full server restart for monitor enable/disable toggles.
 serverEvents.on('settings-saved', () => {
   const diskEnabled     = process.env.PRX_DISK_MONITOR_ENABLED === 'Y';
   const watchdogEnabled = process.env.PRX_WATCHDOG_ENABLED     === 'Y';
+  const kbSyncEnabled   = process.env.PRX_REALTIME_KB_SYNC     === 'Y'
+                       && process.env.PRX_KB_MODE               === 'distributed';
 
   if (diskEnabled && !diskWorker)         startDiskMonitor();
   if (!diskEnabled && diskWorker)         stopDiskMonitor();
   if (watchdogEnabled && !watchdogWorker) startWatchdog();
   if (!watchdogEnabled && watchdogWorker) stopWatchdog();
+  if (kbSyncEnabled && !kbSyncWorker)    startKbSync();
+  if (!kbSyncEnabled && kbSyncWorker)    stopKbSync();
 });
 
 // ── Server listen ─────────────────────────────────────────────────────────────
@@ -202,6 +250,7 @@ app.listen(config.port, () => {
   startWatchdog();
   startDiskMonitor();
   startUpdateChecker();
+  startKbSync();
 
   if (config.pollIntervalDays > 0) {
     schedulePollScript(config.pollIntervalDays);
