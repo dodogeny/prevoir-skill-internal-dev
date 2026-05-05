@@ -9,6 +9,8 @@
 const { workerData, parentPort } = require('worker_threads');
 const { spawn }  = require('child_process');
 const crypto     = require('crypto');
+const http       = require('http');
+const https      = require('https');
 const net        = require('net');
 const tls        = require('tls');
 const fs         = require('fs');
@@ -127,6 +129,61 @@ function buildWatchPrompt(key) {
     '',
     'Keep each section under 100 words. Be direct and actionable.',
   ].join('\n');
+}
+
+// ── Jira change detection ─────────────────────────────────────────────────────
+
+// Returns { hash, snapshot } or null when Jira is unreachable / not configured.
+// Snapshot covers the fields that indicate meaningful ticket progress.
+function fetchJiraSnapshot(key) {
+  return new Promise(resolve => {
+    const jiraUrl  = (process.env.JIRA_URL || '').replace(/\/$/, '');
+    const user     = process.env.JIRA_USERNAME  || '';
+    const token    = process.env.JIRA_API_TOKEN || '';
+    if (!jiraUrl || !user || !token) return resolve(null);
+
+    const auth    = Buffer.from(`${user}:${token}`).toString('base64');
+    const apiPath = `/rest/api/2/issue/${encodeURIComponent(key)}?fields=updated,comment,status`;
+    let urlObj;
+    try { urlObj = new URL(jiraUrl + apiPath); } catch (_) { return resolve(null); }
+
+    const mod = urlObj.protocol === 'https:' ? https : http;
+    const req = mod.request({
+      hostname: urlObj.hostname,
+      port:     urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+      path:     urlObj.pathname + urlObj.search,
+      method:   'GET',
+      headers:  { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+    }, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk.toString(); });
+      res.on('end', () => {
+        try {
+          const issue    = JSON.parse(data);
+          const fields   = issue.fields || {};
+          const comments = fields.comment || {};
+          const lastCmt  = (comments.comments || []).slice(-1)[0];
+          const snapshot = {
+            updated:            fields.updated       || '',
+            commentCount:       comments.total        || 0,
+            lastCommentUpdated: lastCmt?.updated      || null,
+            status:             fields.status?.name   || '',
+          };
+          const hash = crypto.createHash('sha1').update(JSON.stringify(snapshot)).digest('hex');
+          resolve({ hash, snapshot });
+        } catch (_) { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(10000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+// ── Activity recording ────────────────────────────────────────────────────────
+
+function recordActivity(event, key, details) {
+  if (parentPort) parentPort.postMessage({ type: 'activity', event, key: key || null, details: details || {} });
 }
 
 // ── Step-announcement regex (matches ### Step W0 — ... lines) ────────────────
@@ -360,8 +417,28 @@ async function pollTicket(key) {
     const s = loadStore();
     if (s[key]) { s[key].lastLogFile = logFile; saveStore(s); }
   }
+  recordActivity('watch_poll_started', key, { pollNum, interval: entry.interval });
 
   try {
+    // Cheap Jira snapshot check — skip Claude if ticket hasn't changed
+    const snap = await fetchJiraSnapshot(key);
+    if (snap && snap.hash && snap.hash === entry.lastSnapshotHash) {
+      logStream.write(`No Jira changes detected (hash ${snap.hash}) — Claude run skipped.\nFinished: ${new Date().toISOString()}\n`);
+      logStream.end();
+      log('info', `No Jira changes for ${key} — skipping poll`);
+      recordActivity('watch_poll_skipped', key, { pollNum, reason: 'no_jira_changes' });
+      const s = loadStore();
+      if (s[key]) {
+        s[key].pollingNow  = false;
+        s[key].lastPollAt  = new Date().toISOString();
+        s[key].lastLogFile = logFile;
+        s[key].nextPollAt  = new Date(Date.now() + intervalMs(s[key].interval)).toISOString();
+        saveStore(s);
+        broadcast(s);
+      }
+      return;
+    }
+
     const digest = await runClaudeWatch(key, text => { logStream.write(text); });
 
     const digestHash = crypto.createHash('sha1').update(digest).digest('hex');
@@ -380,10 +457,11 @@ async function pollTicket(key) {
     if (!t || t.status !== 'watching') return;
 
     t.pollCount++;
-    t.lastPollAt   = new Date().toISOString();
-    t.lastDigest   = digest;
-    t.lastDigestAt = new Date().toISOString();
-    t.lastDigestHash = digestHash;
+    t.lastPollAt      = new Date().toISOString();
+    t.lastDigest      = digest;
+    t.lastDigestAt    = new Date().toISOString();
+    t.lastDigestHash  = digestHash;
+    if (snap?.hash) t.lastSnapshotHash = snap.hash;
     t.lastError    = null;
     t.lastLogFile  = logFile;
 
@@ -400,6 +478,10 @@ async function pollTicket(key) {
 
     if (unchanged) {
       log('info', `No changes detected for ${key} (poll #${t.pollCount}) — email skipped`);
+      recordActivity('watch_poll_completed', key, {
+        pollCount: t.pollCount, emailed: false, reason: 'digest_unchanged',
+        completed: t.status === 'completed',
+      });
     } else {
       const jiraBase = (process.env.JIRA_URL || '').replace(/\/$/, '');
       const subject  = `[Prevoyant Watch] ${key} digest · poll #${t.pollCount}`;
@@ -423,6 +505,14 @@ async function pollTicket(key) {
         .catch(e => log('error', `Email failed for ${key}: ${e.message}`));
 
       log('info', `Poll complete for ${key} (poll #${t.pollCount}) — digest emailed`);
+      recordActivity('watch_poll_completed', key, {
+        pollCount: t.pollCount, emailed: true,
+        completed: t.status === 'completed',
+      });
+    }
+
+    if (t.status === 'completed') {
+      recordActivity('watch_completed', key, { totalPolls: t.pollCount });
     }
 
   } catch (err) {
@@ -430,6 +520,7 @@ async function pollTicket(key) {
     logStream.end();
 
     log('error', `Poll failed for ${key}: ${err.message}`);
+    recordActivity('watch_poll_failed', key, { error: err.message });
     const t2 = loadStore();
     if (t2[key]) {
       t2[key].pollingNow = false;
@@ -499,18 +590,20 @@ if (parentPort) {
       const now = Date.now();
       tickets[key] = {
         key,
-        addedAt:      new Date(now).toISOString(),
-        interval:     interval || '1d',
-        maxPolls:     parseInt(maxPolls) || 0,
-        pollCount:    0,
-        lastPollAt:   null,
-        nextPollAt:   new Date(now + intervalMs(interval || '1d')).toISOString(),
-        status:       'watching',
-        lastDigest:   null,
-        lastDigestAt: null,
-        lastError:    null,
-        pollingNow:   false,
-        pollLog:      [],
+        addedAt:          new Date(now).toISOString(),
+        interval:         interval || '1d',
+        maxPolls:         parseInt(maxPolls) || 0,
+        pollCount:        0,
+        lastPollAt:       null,
+        nextPollAt:       new Date(now + intervalMs(interval || '1d')).toISOString(),
+        status:           'watching',
+        lastDigest:       null,
+        lastDigestAt:     null,
+        lastDigestHash:   null,
+        lastSnapshotHash: null,
+        lastError:        null,
+        pollingNow:       false,
+        pollLog:          [],
       };
       saveStore(tickets);
       log('info', `Now watching ${key} (interval: ${interval || '1d'}, maxPolls: ${maxPolls || 'unlimited'})`);

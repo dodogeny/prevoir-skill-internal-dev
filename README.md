@@ -1,4 +1,4 @@
-# Prevoyant - Claude Code Plugin `v1.2.7`
+# Prevoyant - Claude Code Plugin `v1.2.8`
 
 **Prevoyant** is a [Claude Code](https://claude.ai/code) plugin — an AI agent team that runs a structured, end-to-end developer workflow for Jira tickets. Three modes:
 
@@ -312,6 +312,22 @@ Set `PRX_NOTIFY_ENABLED=Y` to enable. Requires `PRX_EMAIL_TO` to be set.
 | `PRX_DISK_CAPACITY_ALERT_PCT` | `80` | Percentage of the size quota at which to send an alert email. E.g. 80% of 500 MB = alert fires at 400 MB. |
 | `PRX_DISK_CLEANUP_INTERVAL_DAYS` | `7` | Days between cleanup passes (surfaces a pending-cleanup notice on the dashboard). |
 
+### Ticket Watcher (optional)
+
+Continuously monitors Jira tickets on a configurable schedule and emails AI-generated progress digests. Manage watched tickets at `/dashboard/watch`.
+
+Set `PRX_WATCH_ENABLED=Y` to activate.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRX_WATCH_ENABLED` | `N` | Set to `Y` to start the ticket watcher background worker. Can be toggled from Settings — no restart required. |
+| `PRX_WATCH_POLL_INTERVAL` | `1d` | Default interval pre-selected when adding a ticket: `1h`, `1d`, `2d`, or `5d`. |
+| `PRX_WATCH_MAX_POLLS` | `0` | Default maximum polls per ticket when adding (0 = unlimited). |
+| `PRX_WATCH_LOG_KEEP_DAYS` | `30` | Delete poll log files older than this many days during disk cleanup. |
+| `PRX_WATCH_LOG_KEEP_PER_TICKET` | `10` | Keep at most this many log files per ticket (oldest removed first) during disk cleanup. |
+
+Poll logs are written to `~/.prevoyant/watch/logs/{TICKET_KEY}/` — one timestamped file per poll. The live log tail is available from the Watch dashboard while a poll is in flight.
+
 ### Claude Budget Tracker (optional)
 
 | Variable | Default | Description |
@@ -359,6 +375,17 @@ The skill generates reports via pandoc → Chrome headless → HTML fallback (tr
 |----------|---------|
 | macOS / Linux | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Windows | `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"` |
+
+### ast-grep (optional — structural code search)
+
+`ast-grep` (`sg`) enhances Step 5 code location with syntax-aware search — it matches Java class hierarchies, method calls, and overrides by AST structure rather than text, eliminating grep false positives from comments and string literals. The skill falls back to pure grep if `sg` is not installed.
+
+| Platform | Command |
+|----------|---------|
+| macOS | `brew install ast-grep` |
+| Linux / Windows WSL | `cargo install ast-grep` (requires Rust) or download a binary from [github.com/ast-grep/ast-grep/releases](https://github.com/ast-grep/ast-grep/releases) |
+
+Verify: `sg --version`
 
 ### Git
 The repository at `REPO_DIR` must be present locally. The skill creates branches there.
@@ -617,9 +644,26 @@ Story points = **Complexity + Risk + Repetition** (not hours). Scale: 1 · 2 · 
 ├── server/                       # Prevoyant Server — optional ambient agent (see docs/prevoyant-server.md)
 │   ├── index.js                  # Express app entry point
 │   ├── dashboard/                # Dashboard routes, ticket tracker, pipeline stage definitions
+│   ├── kb/                       # KB query, sync, and cache layer
+│   │   ├── kbCache.js            # In-memory KB cache (invalidated on sync)
+│   │   ├── kbQuery.js            # Semantic KB query with indexed memory retrieval
+│   │   └── kbSync.js             # Real-time KB sync core (Redis doorbell + Git)
+│   ├── memory/                   # Indexed agent memory — dual-backend (JSON + Redis)
+│   │   ├── memoryAdapter.js      # Unified adapter: Redis primary, JSON fallback
+│   │   ├── redisMemory.js        # Redis backend (PRX_REDIS_ENABLED)
+│   │   └── jsonMemory.js         # JSON backend (PRX_MEMORY_INDEX_ENABLED)
 │   ├── queue/                    # FIFO job queue (one Claude session at a time)
 │   ├── runner/                   # Claude CLI spawner + poll scheduler
+│   ├── watchers/                 # Ticket watcher coordination
+│   │   ├── watchManager.js       # Coordinates add/stop/resume across worker + routes
+│   │   └── watchStore.js         # CRUD on ~/.prevoyant/server/watched-tickets.json
 │   ├── webhooks/                 # Jira webhook receiver
+│   ├── workers/                  # Background worker threads
+│   │   ├── diskMonitor.js        # Disk space tracking and alerts
+│   │   ├── healthMonitor.js      # Watchdog: polls /health, emails on DOWN/UP
+│   │   ├── kbSyncWorker.js       # KB sync worker: Redis XREAD poll loop
+│   │   ├── ticketWatcherWorker.js # Jira ticket watcher: scheduled digest polls
+│   │   └── updateChecker.js      # Checks GitHub for plugin updates
 │   └── scripts/
 │       ├── start.sh              # Start server in background (macOS / Linux)
 │       ├── stop.sh               # Stop server by PID (macOS / Linux)
@@ -856,27 +900,33 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 
 ### v1.2.8 — Ticket Watcher
 
-- **Jira ticket monitoring with AI digests:** A new background worker (`server/workers/ticketWatcherWorker.js`) polls any Jira ticket on a configurable schedule (every hour, day, 2 days, or 5 days). On each poll it invokes the skill in **Watch Mode** (`/prx:dev watch KEY`) using the configured Jira MCP — no direct API calls needed. Claude fetches all ticket details and comments, then produces a structured digest: **Ticket Summary**, **Progress Assessment**, **Blockers & Concerns**, **What Should Happen Next**, and an **Overall Verdict** (ON TRACK / NEEDS ATTENTION / BLOCKED / STALLED). The digest is emailed via the existing SMTP stack. Zero new npm dependencies.
+- **Jira ticket monitoring with AI digests:** A new background worker (`server/workers/ticketWatcherWorker.js`) polls any Jira ticket on a configurable schedule (every hour, day, 2 days, or 5 days). On each poll it builds a structured four-step Watch Mode prompt (W0–W3: KB Query → Fetch Ticket → Progress Analysis → Digest Output) and invokes the Claude CLI with the configured Jira MCP — no direct API calls for the analysis itself. Claude fetches all ticket details and comments, then produces a structured digest: **Ticket Summary**, **Progress Assessment**, **Blockers & Concerns**, **What Should Happen Next**, and an **Overall Verdict** (ON TRACK / NEEDS ATTENTION / BLOCKED / STALLED). The digest is emailed via the existing SMTP stack. Zero new npm dependencies.
 
-- **Watch Mode in SKILL.md:** The skill now recognises the `watch` trigger phrase and runs a dedicated four-step workflow (W0–W3: KB Query → Fetch Ticket → Progress Analysis → Digest Output). Steps are announced in the standard `### Step W{N} — {Label}` format so the dashboard pipeline display and live progress panel can track them.
+- **Jira change detection — skip unchanged polls:** Before invoking Claude, the worker makes a lightweight Jira REST call to fetch a snapshot of the ticket (`updated`, `commentCount`, `lastCommentUpdated`, `status`) and hashes it. If the hash matches the previous poll's snapshot, the Claude invocation is skipped entirely (no email sent, no tokens consumed). Claude only runs when the ticket has actually changed. The snapshot hash is persisted per-ticket so skips survive server restarts.
+
+- **Poll log files:** Every poll (whether Claude ran or was skipped) writes a timestamped log to `~/.prevoyant/watch/logs/{TICKET_KEY}/`. The live log tail is streamed to the Watch dashboard in real time while a poll is in flight. Log retention is controlled by `PRX_WATCH_LOG_KEEP_DAYS` (default 30 days) and `PRX_WATCH_LOG_KEEP_PER_TICKET` (default 10 files per ticket); cleanup runs from the Disk Monitor page.
 
 - **Dedicated Watch page** (`/dashboard/watch`): Add tickets with a key + interval + optional max-poll-count form. The table shows live status, poll counts, last/next poll times, and a truncated digest preview. Per-ticket actions: **Poll now** (immediate on-demand digest + email), **Stop**, **Resume** (restores a stopped ticket to active watching), and **Remove**.
 
-- **Live progress panel:** While a poll is running, a blue in-progress card appears at the top of the Watch page showing which ticket is being processed and a real-time log of each step as Claude announces it. The page polls `/dashboard/watch/json` every 3 seconds and patches the table (status badges, poll counts, timestamps, blinking eye) without a full reload.
+- **Live progress panel:** While a poll is running, a blue in-progress card appears at the top of the Watch page showing which ticket is being processed and a real-time step log as Claude announces each stage. The page polls `/dashboard/watch/json` every 3 seconds and patches the table (status badges, poll counts, timestamps, blinking eye) without a full reload.
 
 - **Animated eye icon on watching tickets:** Active tickets show a blinking eye SVG animation, making it immediately obvious which tickets are under active surveillance.
 
-- **Survives restarts:** Watched tickets and their poll history are persisted to `~/.prevoyant/server/watched-tickets.json`. The worker reattaches all active watches automatically on server start.
+- **Survives restarts:** Watched tickets, their poll history, and snapshot hashes are persisted to `~/.prevoyant/server/watched-tickets.json`. The worker reattaches all active watches automatically on server start.
 
-- **New config keys** (all editable in Settings → Ticket Watcher): `PRX_WATCH_ENABLED` (Y/N), `PRX_WATCH_POLL_INTERVAL` (default interval for the add form), `PRX_WATCH_MAX_POLLS` (default max polls, 0 = unlimited). Worker starts/stops reactively when the setting is toggled — no restart required.
+- **New config keys** (all editable in Settings → Ticket Watcher): `PRX_WATCH_ENABLED` (Y/N), `PRX_WATCH_POLL_INTERVAL` (default interval), `PRX_WATCH_MAX_POLLS` (default max polls, 0 = unlimited), `PRX_WATCH_LOG_KEEP_DAYS` (log file retention in days), `PRX_WATCH_LOG_KEEP_PER_TICKET` (max log files per ticket). Worker starts/stops reactively when the setting is toggled — no restart required.
 
-### v1.2.7 — Real-time KB Sync (Redis doorbell · Git mail carrier)
+### v1.2.7 — Indexed Agent Memory + Real-time KB Sync
+
+- **Indexed agent memory with dual-backend support:** Each completed session is indexed (ticket key, summary, key findings, cost, timestamp) into a local JSON file at `~/.prevoyant/memory/index.json` and optionally into Redis. At session start, the server pre-loads the most relevant prior-session entries and injects them into the agent's context — replacing a full KB scan with a targeted lookup. This achieves a ~96% token reduction on the prior-knowledge retrieval step while keeping agents grounded in past work. The memory backend is selected via `PRX_MEMORY_INDEX_ENABLED` (JSON, default Y) and `PRX_REDIS_ENABLED` (Redis, takes priority when enabled). Both are written simultaneously when Redis is active so the JSON index stays warm as a hot-standby.
 
 - **Live KB propagation across machines:** When a session completes on any machine, `server/kb/kbSync.js` does a `git push` (KB files travel to the private repo) then posts a ~100-byte notification to an [Upstash Redis](https://upstash.com/) stream — just `{ machine, ticket, commit }`. Every other connected machine is polling `XREAD` every 10 seconds (configurable); on a new notification it immediately does `git pull --rebase` and invalidates its local KB cache. Idle machines stay in sync between sessions so Step 0 KB queries always reflect the latest state. **No KB content ever touches Redis** — the stream is the doorbell, Git is the mail carrier.
 
+- **Dual sync trigger modes:** `PRX_KB_SYNC_TRIGGER=session` (default) pushes after each session completes. `PRX_KB_SYNC_TRIGGER=filesystem` watches the KB directory for file changes and syncs immediately (useful when KB files are edited directly). `PRX_KB_SYNC_TRIGGER=both` enables both. A debounce (`PRX_KB_SYNC_DEBOUNCE_SECS`, default 3 s) prevents rapid-fire pushes on bulk writes.
+
 - **Zero new npm dependencies:** The Upstash REST API is called with Node's built-in `https` module. A worker thread (`workers/kbSyncWorker.js`) runs the poll loop without blocking the main server process, following the same pattern as the existing health and disk monitors.
 
-- **New config fields (all under `KNOWLEDGE BASE` in `.env`):** `PRX_REALTIME_KB_SYNC` (Y/N, default N), `PRX_UPSTASH_REDIS_URL`, `PRX_UPSTASH_REDIS_TOKEN`, `PRX_KB_SYNC_MACHINE` (hostname override), `PRX_KB_SYNC_POLL_SECS` (default 10). All fields are also editable from the dashboard Settings page. Free tier on Upstash is more than sufficient.
+- **New config fields (all under `KNOWLEDGE BASE` in `.env`):** `PRX_REALTIME_KB_SYNC` (Y/N, default N), `PRX_UPSTASH_REDIS_URL`, `PRX_UPSTASH_REDIS_TOKEN`, `PRX_KB_SYNC_MACHINE` (hostname override), `PRX_KB_SYNC_POLL_SECS` (default 10), `PRX_KB_SYNC_TRIGGER` (`session` | `filesystem` | `both`), `PRX_KB_SYNC_DEBOUNCE_SECS` (default 3). All fields are also editable from the dashboard Settings page. Free tier on Upstash is more than sufficient.
 
 ### v1.2.6 — Henk, Agent Personas & Personal Memory
 

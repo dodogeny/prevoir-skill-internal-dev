@@ -4568,6 +4568,7 @@ router.post('/watch/add', express.urlencoded({ extended: false }), (req, res) =>
 
   watchStore.addTicket(key, interval, maxPolls);
   watchManager.addTicket(key, interval, maxPolls);
+  activityLog.record('watch_added', key, 'user', { interval, maxPolls });
   res.redirect(303, '/dashboard/watch?flash=added');
 });
 
@@ -4575,6 +4576,7 @@ router.post('/watch/:key/stop', (req, res) => {
   const key = (req.params.key || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   watchStore.stopTicket(key);
   watchManager.stopTicket(key);
+  activityLog.record('watch_stopped', key, 'user', {});
   res.redirect(303, '/dashboard/watch?flash=stopped');
 });
 
@@ -4582,6 +4584,7 @@ router.post('/watch/:key/resume', (req, res) => {
   const key = (req.params.key || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   watchStore.resumeTicket(key);
   watchManager.resumeTicket(key);
+  activityLog.record('watch_resumed', key, 'user', {});
   res.redirect(303, '/dashboard/watch?flash=resumed');
 });
 
@@ -4596,6 +4599,7 @@ router.post('/watch/:key/remove', (req, res) => {
   watchStore.stopTicket(key);
   watchManager.stopTicket(key);
   watchStore.removeTicket(key);
+  activityLog.record('watch_removed', key, 'user', {});
   res.redirect(303, '/dashboard/watch?flash=removed');
 });
 

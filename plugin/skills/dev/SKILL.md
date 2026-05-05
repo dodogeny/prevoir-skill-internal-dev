@@ -1917,28 +1917,60 @@ Confirm the branch was created and is checked out.
 
 Based on the ticket description, comments, and labels, search the codebase at `{REPO_DIR}/` to identify:
 
-1. **Primary files likely affected** — use Grep/Glob to locate relevant classes, methods, or config
+1. **Primary files likely affected** — use the three-pass search sequence below
 2. **Entry point** — where does the flow start? (API endpoint, UI event handler, worker, scheduled job)
 3. **Data flow** — trace the relevant path through the layers (Frontend → API → DataSource → DB, or Worker → Plugin → etc.)
 4. **Related files** — any model, DTO, or DB script changes that will likely be needed
-5. **Class hierarchy** *(mandatory for enhancement tickets adding new fields or methods)* — identify the full inheritance chain of the target class:
+5. **Class hierarchy** *(mandatory for enhancement tickets adding new fields or methods)* — identify the full inheritance chain of the target class using ast-grep:
    ```bash
-   grep -rn "extends {TargetClass}\|class {TargetClass} extends" --include="*.java" {REPO_DIR}/
+   # All direct subclasses
+   sg --pattern 'class $NAME extends {TargetClass}' --lang java {REPO_DIR}/
+   # All classes implementing the target interface
+   sg --pattern 'class $NAME implements {TargetClass}' --lang java {REPO_DIR}/
+   # Where the target class itself extends
+   sg --pattern 'class {TargetClass} extends $PARENT' --lang java {REPO_DIR}/
    ```
-   - Confirm the abstract base class (if any) and grep for all sibling subclasses
+   - Confirm the abstract base class (if any) and enumerate all sibling subclasses
    - Ask: does the new infrastructure (fields, getters/setters, utility methods) belong in the concrete class, or in the abstract base so future subclasses inherit it automatically?
    - **Rule:** If the abstract base already owns similar state for other listeners/workers in the same family, the new state belongs there too. Keep only the concrete-class-specific config wiring (`getConfig()` items, `setAttribute()` cases) in the concrete class.
    - Add the abstract base class to the file map with role "Abstract base — owns shared infrastructure"
 
-#### Grep-First, Read-Second Rule (mandatory)
+#### Three-Pass Search Sequence (mandatory)
 
-Never read an entire source file speculatively. Always follow this sequence:
+Never read an entire source file speculatively. Always follow these three passes in order:
 
-1. `Grep` for the relevant class name, method name, or keyword → get the exact file path and line number
-2. `Read` only the relevant line range (the method ± ~20 lines of surrounding context)
-3. Only read the full file if the method spans many lines or the grep result is ambiguous
+**Pass 1 — Grep (candidate files)**
+```bash
+grep -rn "{ClassName}\|{methodName}\|{keyword}" --include="*.java" {REPO_DIR}/
+```
+Purpose: fast, cheap scan across the whole repo. Output is a list of candidate file paths and approximate line numbers. Cost: ~0 tokens.
+
+**Pass 2 — ast-grep (structural precision)**
+
+Run ast-grep on the candidate files (or the whole repo for targeted structural queries) to find exact symbol locations without reading file content:
+
+| Goal | Command |
+|------|---------|
+| Find all calls to a method | `sg --pattern '$_.$METHOD($$$)' --lang java {REPO_DIR}/` |
+| Find all definitions of a method | `sg --pattern 'public $_ {METHOD}($$$) { $$$ }' --lang java {REPO_DIR}/` |
+| Find all overrides of a method | `sg --pattern '@Override $$$ {METHOD}($$$) { $$$ }' --lang java {REPO_DIR}/` |
+| Find all subclasses | `sg --pattern 'class $NAME extends {Parent}' --lang java {REPO_DIR}/` |
+| Find all interface implementations | `sg --pattern 'class $NAME implements {Interface}' --lang java {REPO_DIR}/` |
+| Find field reads/writes | `sg --pattern '$_.$FIELD' --lang java {file}` |
+
+ast-grep matches syntax, not text — it finds `isEnableServerSafeguard()` regardless of whitespace, comments between tokens, or line wrapping. Where grep returns false positives (e.g. matching a comment or string literal), ast-grep returns only real code references.
+
+> **Prerequisite check:** before using ast-grep, verify it is available: `which sg`. If not installed, fall back to Pass 1 grep results and note `ast-grep not available — structural pass skipped` in the file map. Install with `brew install ast-grep` (macOS) or `cargo install ast-grep`.
+
+**Pass 3 — Read (targeted context)**
+```
+Read only the relevant line range (the method ± ~20 lines of surrounding context)
+```
+Only read the full file if the method spans many lines or the previous passes left the exact location ambiguous.
 
 Reading a 40-line method costs ~60 tokens. Reading a 2,000-line Java file costs ~3,000 tokens. Apply this discipline to every file in this step and in Step 8.
+
+**When to stop at Pass 1:** if the CMM `core-mental-map/architecture.md` already provides a confirmed `file:line` anchor for the relevant class, go directly to Pass 3 — no searching needed. The three passes exist to find what the KB does not already know.
 
 Use the ticket **Labels** and **Components** as hints:
 - `CaseManager` → `fcfrontend/.../view/CaseManager.java`
@@ -2132,7 +2164,7 @@ If confidence is **Low** (insertion points unclear after reading the code), stop
 Before convening the full panel, Morgan performs a **2-op pre-assessment** to decide whether the full panel is needed or a fast-path is sufficient.
 
 **Pre-assessment (≤ 2 ops):**
-1. Count files in the Step 5 file map and run a quick caller count: `grep -r "{primary_method}" "$REPO_DIR" | wc -l`
+1. Count files in the Step 5 file map and run a quick caller count: `sg --pattern '$_.$METHOD($$$)' --lang java "$REPO_DIR/" | wc -l` (fall back to `grep -r "{primary_method}" "$REPO_DIR" | wc -l` if ast-grep is unavailable)
 2. Check whether Step 0b surfaced a Prior Knowledge hit with High confidence on the same component and pattern
 
 **Complexity verdict:**

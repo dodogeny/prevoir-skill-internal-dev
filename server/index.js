@@ -234,7 +234,11 @@ function startTicketWatcher() {
   watchManager.setWorker(ticketWatcherWorker);
 
   ticketWatcherWorker.on('message', msg => {
-    if (msg?.type === 'log') return; // already printed inside worker
+    if (!msg) return;
+    if (msg.type === 'log') return; // already printed inside worker
+    if (msg.type === 'activity') {
+      activityLog.record(msg.event, msg.key || null, 'system', msg.details || {});
+    }
   });
   ticketWatcherWorker.on('error', err =>
     console.error('[ticket-watcher] Worker error:', err.message)
