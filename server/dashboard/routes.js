@@ -1922,9 +1922,12 @@ function countFiles(dir) {
 }
 
 function kbStats() {
-  const kb       = kbDir();
-  const sessions = path.join(os.homedir(), '.prevoyant', 'sessions');
-  const reports  = process.env.CLAUDE_REPORT_DIR || path.join(os.homedir(), '.prevoyant', 'reports');
+  const kb        = kbDir();
+  const sessions  = path.join(os.homedir(), '.prevoyant', 'sessions');
+  const reports   = process.env.CLAUDE_REPORT_DIR || path.join(os.homedir(), '.prevoyant', 'reports');
+  const serverDir = path.join(os.homedir(), '.prevoyant', 'server');
+  const watchLogs = path.join(os.homedir(), '.prevoyant', 'watch', 'logs');
+  const memoryDir = path.join(os.homedir(), '.prevoyant', 'memory');
   return {
     kbDir:      kb,
     kbExists:   fs.existsSync(kb),
@@ -1933,6 +1936,12 @@ function kbStats() {
     sessionFiles: countFiles(sessions),
     reports,
     reportFiles:  countFiles(reports),
+    serverDir,
+    serverFiles:   countFiles(serverDir),
+    watchLogs,
+    watchLogFiles: countFilesRecursive(watchLogs),
+    memoryDir,
+    memoryFiles:   countFilesRecursive(memoryDir),
   };
 }
 
@@ -3307,17 +3316,29 @@ function renderSettings(vals, flash) {
                 <span class="bk-stat-val ${kb.kbFiles === 0 ? 'muted' : ''}">${kb.kbFiles === 0 ? 'none' : kb.kbFiles}</span>
               </div>
               <div class="bk-stat">
-                <span class="bk-stat-lbl">Session files</span>
+                <span class="bk-stat-lbl">Sessions</span>
                 <span class="bk-stat-val ${kb.sessionFiles === 0 ? 'muted' : ''}">${kb.sessionFiles === 0 ? 'none' : kb.sessionFiles}</span>
               </div>
               <div class="bk-stat">
                 <span class="bk-stat-lbl">Reports</span>
                 <span class="bk-stat-val ${kb.reportFiles === 0 ? 'muted' : ''}">${kb.reportFiles === 0 ? 'none' : kb.reportFiles}</span>
               </div>
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">Server state</span>
+                <span class="bk-stat-val ${kb.serverFiles === 0 ? 'muted' : ''}">${kb.serverFiles === 0 ? 'none' : kb.serverFiles}</span>
+              </div>
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">Watch logs</span>
+                <span class="bk-stat-val ${kb.watchLogFiles === 0 ? 'muted' : ''}">${kb.watchLogFiles === 0 ? 'none' : kb.watchLogFiles}</span>
+              </div>
+              <div class="bk-stat">
+                <span class="bk-stat-lbl">Memory</span>
+                <span class="bk-stat-val ${kb.memoryFiles === 0 ? 'muted' : ''}">${kb.memoryFiles === 0 ? 'none' : kb.memoryFiles}</span>
+              </div>
             </div>
             <div class="s-hint" style="margin-bottom:.7rem">
               Download a <code>.tar.gz</code> archive of all selected items. Extract with
-              <code>tar -xzf prevoyant-kb-backup-*.tar.gz</code>.
+              <code>tar -xzf prevoyant-backup-*.tar.gz</code>.
             </div>
 
             <div class="bk-include-row">
@@ -3333,9 +3354,21 @@ function renderSettings(vals, flash) {
                 <input type="checkbox" id="bk-inc-reports" ${kb.reportFiles === 0 ? '' : 'checked'}>
                 Reports (${kb.reportFiles})
               </label>
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-server" ${kb.serverFiles === 0 ? '' : 'checked'}>
+                Server state — activity log &amp; watched tickets (${kb.serverFiles})
+              </label>
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-watchlogs" ${kb.watchLogFiles === 0 ? '' : 'checked'}>
+                Watch logs (${kb.watchLogFiles})
+              </label>
+              <label class="bk-inc-lbl">
+                <input type="checkbox" id="bk-inc-memory" ${kb.memoryFiles === 0 ? '' : 'checked'}>
+                Agent memory index (${kb.memoryFiles})
+              </label>
             </div>
 
-            <button type="button" class="btn-export" onclick="downloadKbBackup()" ${!kb.kbExists && kb.sessionFiles === 0 && kb.reportFiles === 0 ? 'disabled' : ''}>
+            <button type="button" class="btn-export" onclick="downloadKbBackup()" ${!kb.kbExists && kb.sessionFiles === 0 && kb.reportFiles === 0 && kb.serverFiles === 0 ? 'disabled' : ''}>
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download Backup (.tar.gz)
             </button>
@@ -3794,9 +3827,14 @@ function renderSettings(vals, flash) {
       document.getElementById('n-events-hidden').value = vals.join(',');
     }
     function downloadKbBackup() {
-      const sessions = document.getElementById('bk-inc-sessions').checked ? '1' : '0';
-      const reports  = document.getElementById('bk-inc-reports').checked  ? '1' : '0';
-      window.location.href = '/dashboard/kb/export?sessions=' + sessions + '&reports=' + reports;
+      const sessions  = document.getElementById('bk-inc-sessions').checked  ? '1' : '0';
+      const reports   = document.getElementById('bk-inc-reports').checked   ? '1' : '0';
+      const server    = document.getElementById('bk-inc-server').checked    ? '1' : '0';
+      const watchlogs = document.getElementById('bk-inc-watchlogs').checked ? '1' : '0';
+      const memory    = document.getElementById('bk-inc-memory').checked    ? '1' : '0';
+      window.location.href = '/dashboard/kb/export?sessions=' + sessions +
+        '&reports=' + reports + '&server=' + server +
+        '&watchlogs=' + watchlogs + '&memory=' + memory;
     }
 
     function importKbBackup() {
@@ -4657,28 +4695,36 @@ router.post('/ticket/:key/delete', (req, res) => {
 
 // KB backup export
 router.get('/kb/export', (req, res) => {
-  const includeSessions = req.query.sessions === '1';
-  const includeReports  = req.query.reports  === '1';
+  const includeSessions  = req.query.sessions  === '1';
+  const includeReports   = req.query.reports   === '1';
+  const includeServer    = req.query.server    === '1';
+  const includeWatchLogs = req.query.watchlogs === '1';
+  const includeMemory    = req.query.memory    === '1';
 
   const kb = kbStats();
   const dirs = [];
-  if (kb.kbExists)                                     dirs.push(kb.kbDir);
-  if (includeSessions && kb.sessionFiles > 0)          dirs.push(kb.sessions);
-  if (includeReports  && kb.reportFiles  > 0)          dirs.push(kb.reports);
+  if (kb.kbExists)                                      dirs.push(kb.kbDir);
+  if (includeSessions  && kb.sessionFiles  > 0)         dirs.push(kb.sessions);
+  if (includeReports   && kb.reportFiles   > 0)         dirs.push(kb.reports);
+  if (includeServer    && kb.serverFiles   > 0)         dirs.push(kb.serverDir);
+  if (includeWatchLogs && kb.watchLogFiles > 0)         dirs.push(kb.watchLogs);
+  if (includeMemory    && kb.memoryFiles   > 0)         dirs.push(kb.memoryDir);
 
   const validDirs = dirs.filter(d => fs.existsSync(d));
   if (validDirs.length === 0) return res.status(404).send('No files found to export.');
 
   const stamp   = new Date().toISOString().slice(0, 10);
-  const tmpFile = path.join(os.tmpdir(), `prevoyant-kb-${Date.now()}.tar.gz`);
+  const tmpFile = path.join(os.tmpdir(), `prevoyant-backup-${Date.now()}.tar.gz`);
 
   execFile('tar', ['-czf', tmpFile, ...validDirs], (err) => {
     if (err) {
       console.error('[kb/export] tar failed:', err.message);
       return res.status(500).send('Failed to create backup archive: ' + err.message);
     }
-    activityLog.record('kb_exported', null, 'user', { includeSessions, includeReports });
-    res.download(tmpFile, `prevoyant-kb-backup-${stamp}.tar.gz`, () => {
+    activityLog.record('kb_exported', null, 'user', {
+      includeSessions, includeReports, includeServer, includeWatchLogs, includeMemory,
+    });
+    res.download(tmpFile, `prevoyant-backup-${stamp}.tar.gz`, () => {
       try { fs.unlinkSync(tmpFile); } catch (_) {}
     });
   });
