@@ -235,6 +235,7 @@ function record(type, ticketKey = null, actor = 'system', details = {}) {
   };
   events.push(event);
   if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+  _chartCache = null; // invalidate cached chart data on each new event
   // Deferred save: batches rapid back-to-back writes into a single disk flush
   if (!_dirty) {
     _dirty = true;
@@ -279,7 +280,19 @@ function getStats() {
 
 // ── Chart data ────────────────────────────────────────────────────────────────
 
+let _chartCache    = null;
+let _chartCachedAt = 0;
+const CHART_TTL_MS = 60000; // recompute at most once per minute
+
 function getChartData() {
+  const now = Date.now();
+  if (_chartCache && (now - _chartCachedAt) < CHART_TTL_MS) return _chartCache;
+  _chartCache    = _buildChartData();
+  _chartCachedAt = now;
+  return _chartCache;
+}
+
+function _buildChartData() {
   const now  = Date.now();
   const nowD = new Date(now);
 

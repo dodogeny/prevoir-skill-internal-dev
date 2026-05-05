@@ -127,35 +127,63 @@ function saveSession(ticketKey) {
   } catch (_) { /* best-effort */ }
 }
 
+// Max completed/failed/interrupted sessions kept in the in-memory Map.
+// Older ones are served via scanReportsDir() (disk-scan with 15-s cache).
+const MAX_HISTORY = 50;
+
 function loadSessions() {
   const dir = sessionsDir();
   try {
-    let count = 0;
-    for (const file of fs.readdirSync(dir)) {
-      if (!file.endsWith('-session.json')) continue;
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('-session.json'));
+    const active   = [];
+    const history  = [];
+
+    for (const file of files) {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
-        const entry = deserializeDates(raw);
-        if (entry.status === 'running' || entry.status === 'queued' || entry.status === 'retrying') {
-          entry.status = 'interrupted';
-          entry.interruptReason = 'server_restart';
-          entry.completedAt = new Date();
-          tickets.set(raw.ticketKey, entry);
-          saveSession(raw.ticketKey);
-        } else if (entry.status === 'scheduled' && entry.scheduledFor && entry.scheduledFor <= new Date()) {
-          // Schedule was missed while server was offline
-          entry.status = 'interrupted';
-          entry.interruptReason = 'server_restart';
-          entry.completedAt = new Date();
-          tickets.set(raw.ticketKey, entry);
-          saveSession(raw.ticketKey);
+        const s   = raw.status;
+        if (s === 'running' || s === 'queued' || s === 'retrying' || s === 'scheduled') {
+          active.push(raw);
         } else {
-          tickets.set(raw.ticketKey, entry);
+          history.push(raw);
         }
-        count++;
-      } catch (_) { /* corrupt session file — skip */ }
+      } catch (_) { /* corrupt file — skip */ }
     }
-    if (count > 0) console.log(`[tracker] Restored ${count} session(s) from disk`);
+
+    // Sort history newest-first; only keep the most recent MAX_HISTORY
+    history.sort((a, b) => {
+      const ta = a.completedAt || a.queuedAt || 0;
+      const tb = b.completedAt || b.queuedAt || 0;
+      return (new Date(tb) - new Date(ta));
+    });
+    const toLoad = [...active, ...history.slice(0, MAX_HISTORY)];
+
+    let count = 0;
+    for (const raw of toLoad) {
+      const entry = deserializeDates(raw);
+      if (entry.status === 'running' || entry.status === 'queued' || entry.status === 'retrying') {
+        entry.status = 'interrupted';
+        entry.interruptReason = 'server_restart';
+        entry.completedAt = new Date();
+        tickets.set(raw.ticketKey, entry);
+        saveSession(raw.ticketKey);
+      } else if (entry.status === 'scheduled' && entry.scheduledFor && entry.scheduledFor <= new Date()) {
+        entry.status = 'interrupted';
+        entry.interruptReason = 'server_restart';
+        entry.completedAt = new Date();
+        tickets.set(raw.ticketKey, entry);
+        saveSession(raw.ticketKey);
+      } else {
+        tickets.set(raw.ticketKey, entry);
+      }
+      count++;
+    }
+
+    const skipped = files.length - toLoad.length;
+    if (count > 0) {
+      const note = skipped > 0 ? ` (${skipped} older entries skipped — served from disk)` : '';
+      console.log(`[tracker] Restored ${count} session(s) from disk${note}`);
+    }
   } catch (_) { /* sessions dir doesn't exist yet — fine */ }
 }
 
@@ -404,9 +432,16 @@ function deleteTicket(ticketKey) {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 loadSessions();
 
+function hasActive() {
+  for (const t of tickets.values()) {
+    if (t.status === 'running' || t.status === 'queued' || t.status === 'retrying') return true;
+  }
+  return false;
+}
+
 module.exports = {
   recordQueued, reRunTicket, recordScheduled, recordRetrying,
   recordStarted, recordCompleted, recordInterrupted,
   recordStepActive, appendOutput, recordUsage, recordActualCost,
-  getStats, getTicket, getScheduledTickets, deleteTicket,
+  getStats, getTicket, getScheduledTickets, deleteTicket, hasActive,
 };

@@ -201,7 +201,7 @@ printf "════════════════════════
 
 # ── 1. uvx (Jira MCP) ─────────────────────────────────────────────────────────
 
-step "1/7  uvx  (Jira MCP server)  [required]"
+step "1/8 uvx  (Jira MCP server)  [required]"
 
 if command -v uvx &>/dev/null; then
   ok "uvx already installed"
@@ -228,7 +228,7 @@ fi
 
 # ── 2. Node.js + codeburn ─────────────────────────────────────────────────────
 
-step "2/7  Node.js  (budget tracking + Prevoyant Server)  [required]"
+step "2/8  Node.js  (budget tracking + Prevoyant Server)  [required]"
 
 if locate_npx &>/dev/null; then
   ok "Node.js already installed ($(node --version 2>/dev/null || echo 'found'))"
@@ -291,7 +291,7 @@ fi
 
 # ── 3. pandoc (PDF generation) ────────────────────────────────────────────────
 
-step "3/7  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
+step "3/8  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
 
 if command -v pandoc &>/dev/null; then
   ok "pandoc already installed ($(pandoc --version 2>/dev/null | head -1 || echo 'found'))"
@@ -329,9 +329,61 @@ else
   fi
 fi
 
-# ── 4. .env ───────────────────────────────────────────────────────────────────
+# ── 4. qpdf (PDF encryption for WhatsApp delivery) ───────────────────────────
 
-step "4/7  .env  (environment file)  [required]"
+step "4/8  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
+
+if command -v qpdf &>/dev/null; then
+  ok "qpdf already installed ($(qpdf --version 2>/dev/null | head -1 || echo 'found'))"
+else
+  info "Installing qpdf..."
+  QPDF_OK=0
+
+  if [ "$IS_WIN_BASH" -eq 1 ]; then
+    if command -v winget.exe &>/dev/null; then
+      info "→ winget"
+      winget.exe install --id qpdf.qpdf --silent \
+        --accept-package-agreements --accept-source-agreements 2>&1 | tail -5 && QPDF_OK=1
+    fi
+    if [ "$QPDF_OK" -eq 0 ] && command -v choco.exe &>/dev/null; then
+      info "→ Chocolatey"
+      choco.exe install qpdf -y 2>&1 | tail -5 && QPDF_OK=1
+    fi
+    if [ "$QPDF_OK" -eq 0 ] && command -v scoop &>/dev/null; then
+      info "→ Scoop"
+      scoop install qpdf 2>&1 | tail -5 && QPDF_OK=1
+    fi
+  elif [ "$OS_RAW" = "Darwin" ]; then
+    BREW=$(brew_bin 2>/dev/null || echo "")
+    [ -n "$BREW" ] && "$BREW" install qpdf 2>&1 | tail -5 && QPDF_OK=1
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get install -y qpdf 2>&1 | tail -3 && QPDF_OK=1
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y qpdf 2>&1 | tail -3 && QPDF_OK=1
+  elif command -v yum &>/dev/null; then
+    sudo yum install -y qpdf 2>&1 | tail -3 && QPDF_OK=1
+  fi
+
+  if command -v qpdf &>/dev/null; then
+    ok "qpdf installed"
+  else
+    warn "qpdf not installed — PDF encryption for WhatsApp delivery will be skipped."
+    impact "Reports will be sent unencrypted until qpdf is installed"
+    if [ "$IS_WIN_BASH" -eq 1 ]; then
+      info "Install manually: winget install qpdf.qpdf  (or choco install qpdf)"
+    elif [ "$OS_RAW" = "Darwin" ]; then
+      info "Install manually: brew install qpdf"
+    else
+      info "Install manually: apt install qpdf  (Debian/Ubuntu)"
+      info "                  dnf install qpdf  (Fedora/RHEL)"
+    fi
+    info "See: https://github.com/qpdf/qpdf/releases"
+  fi
+fi
+
+# ── 5. .env ───────────────────────────────────────────────────────────────────
+
+step "5/8  .env  (environment file)  [required]"
 
 ENV_FILE="$PROJECT_ROOT/.env"
 ENV_EXAMPLE="$PROJECT_ROOT/.env.example"
@@ -352,7 +404,7 @@ fi
 
 # ── 5. Claude Code settings.json (marketplace registration) ───────────────────
 
-step "5/7  Claude Code marketplace registration  [required]"
+step "6/8  Claude Code marketplace registration  [required]"
 
 # On WSL, Claude Code runs on Windows — write to the Windows user profile.
 # On Git Bash, $HOME already maps to the Windows user folder.
@@ -459,7 +511,7 @@ fi
 # .claude/settings.json and work without this file.  This file only adds
 # pre-approved permissions so common commands don't trigger prompts.
 
-step "6/7  settings.local.json  (permission allowlist)  [optional]"
+step "7/8  settings.local.json  (permission allowlist)  [optional]"
 
 LOCAL_SETTINGS="$PROJECT_ROOT/.claude/settings.local.json"
 mkdir -p "$PROJECT_ROOT/.claude"
@@ -500,7 +552,7 @@ fi
 
 # ── 7. Plugin install + enable ────────────────────────────────────────────────
 
-step "7/7  plugin install + enable  [required]"
+step "8/8  plugin install + enable  [required]"
 
 PLUGIN_OK=0
 if command -v claude &>/dev/null; then

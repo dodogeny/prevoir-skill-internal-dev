@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
-const { getStats, getTicket, reRunTicket, recordScheduled, deleteTicket } = require('./tracker');
+const { getStats, getTicket, reRunTicket, recordScheduled, deleteTicket, hasActive } = require('./tracker');
 const { killJob, enqueue, scheduleJob, prioritizeJob, pauseQueue, resumeQueue, isPaused, getQueueDepth } = require('../queue/jobQueue');
 const activityLog = require('./activityLog');
 const { getPollStatus } = require('../runner/pollScheduler');
@@ -312,13 +312,22 @@ const BASE_CSS = `
     gap: .55rem;
     white-space: nowrap;
   }
-  header h1::before {
-    content: '';
-    width: 8px; height: 8px;
-    background: var(--accent);
-    border-radius: 50%;
+  .sun-logo {
+    display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 0 0 3px rgba(99,102,241,.2);
+    color: rgba(255,255,255,.35);
+    transition: color .5s ease, filter .5s ease;
+  }
+  .sun-logo.processing {
+    color: #fbbf24;
+    filter: drop-shadow(0 0 5px rgba(251,191,36,.55));
+  }
+  .sun-logo.processing svg {
+    animation: sun-spin 6s linear infinite;
+  }
+  @keyframes sun-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
   }
 
   .version-badge {
@@ -423,6 +432,25 @@ const BASE_CSS = `
     border-top: 1px solid var(--border-light);
     margin-top: 2rem;
   }
+`;
+
+// ── Shared script (sun-logo processing indicator) ─────────────────────────────
+
+const BASE_SCRIPT = `
+  <script>
+    (function () {
+      const logo = document.getElementById('sun-logo');
+      if (!logo) return;
+      function checkBusy() {
+        fetch('/dashboard/busy', { cache: 'no-store' })
+          .then(r => r.json())
+          .then(d => logo.classList.toggle('processing', !!d.busy))
+          .catch(() => {});
+      }
+      checkBusy();
+      setInterval(checkBusy, 4000);
+    })();
+  <\/script>
 `;
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -940,7 +968,7 @@ function renderDashboard(stats, budget) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
     <div class="meta"></div>
     <button type="button" class="header-btn" onclick="openModal('add-ticket-modal')">
@@ -1475,6 +1503,7 @@ function renderDashboard(stats, budget) {
       } catch (_) { err.textContent = 'Failed to queue tickets.'; err.style.display = ''; }
     }
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -1692,7 +1721,7 @@ function renderActivity(results, chartData, allTypes, allActors, actStats, filte
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
     <div class="meta">
       <span class="breadcrumb"><a href="/dashboard">Dashboard</a> › Activity Log</span>
@@ -1849,6 +1878,7 @@ function renderActivity(results, chartData, allTypes, allActors, actStats, filte
       });
     })();
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -2038,7 +2068,7 @@ function renderDisk(status, diskLog, flash) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
     <div class="meta">
       <span class="breadcrumb"><a href="/dashboard">Dashboard</a> › Disk Monitor</span>
@@ -2258,6 +2288,7 @@ function renderDisk(status, diskLog, flash) {
         .then(() => location.reload());
     }
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -2384,7 +2415,7 @@ function renderWatchLogs(key, files, ticket, flash) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${esc(pluginVersion)}</span>
     <span class="meta"></span>
     <a href="/dashboard/watch" class="settings-link" style="color:#fff">
@@ -2427,6 +2458,7 @@ function renderWatchLogs(key, files, ticket, flash) {
     </div>
   </div>
   <footer class="footer">Prevoyant Server v${esc(pluginVersion)}</footer>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -2447,7 +2479,7 @@ function renderWatchLogView(key, filename, content, ticket) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${esc(pluginVersion)}</span>
     <span class="meta"></span>
     <a href="/dashboard/watch" class="settings-link" style="color:#fff">
@@ -2507,6 +2539,7 @@ function renderWatchLogView(key, filename, content, ticket) {
     container.scrollTop = container.scrollHeight;
   })();
   </script>` : ''}
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -2698,7 +2731,7 @@ function renderWatch(flash) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${esc(pluginVersion)}</span>
     <span class="meta"></span>
     <a href="/dashboard/activity" class="settings-link">
@@ -2890,6 +2923,7 @@ function renderWatch(flash) {
     setInterval(refresh, POLL_MS);
   })();
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -3201,7 +3235,7 @@ function renderSettings(vals, flash) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
     <div class="meta">
       <span class="breadcrumb"><a href="/dashboard">Dashboard</a> › Settings</span>
@@ -3898,6 +3932,7 @@ function renderSettings(vals, flash) {
       syncWaEvents();
     }
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -3927,7 +3962,7 @@ function renderRestartPage() {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
   </header>
   <div class="restart-box">
@@ -3958,6 +3993,7 @@ function renderRestartPage() {
     }
     setTimeout(poll, 2500);
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -4138,7 +4174,7 @@ function renderDetail(ticket, warn, warnMode) {
 </head>
 <body>
   <header>
-    <h1>Prevoyant Server</h1>
+    <h1><span class="sun-logo" id="sun-logo"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></span>Prevoyant Server</h1>
     <span class="version-badge">v${pluginVersion}</span>
     <div class="meta" style="flex:1"></div>
   </header>
@@ -4419,6 +4455,7 @@ function renderDetail(ticket, warn, warnMode) {
       }, 5000);
     })();
   </script>
+  ${BASE_SCRIPT}
 </body>
 </html>`;
 }
@@ -4432,6 +4469,10 @@ router.get('/', async (_req, res) => {
 });
 
 router.get('/json', (_req, res) => res.json(getStats()));
+
+// Lightweight processing indicator — polled every 4 s by the sun-logo script.
+// O(1) Map scan; does not touch disk, rebuild merged sets, or sort.
+router.get('/busy', (_req, res) => res.json({ busy: hasActive() }));
 
 // Activity log
 router.get('/activity', (req, res) => {

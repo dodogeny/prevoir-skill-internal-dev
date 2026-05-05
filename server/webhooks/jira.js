@@ -11,8 +11,10 @@ const router = express.Router();
 
 const RELEVANT_STATUSES = new Set(['To Do', 'Open', 'Parked', 'Blocked']);
 
-// In-memory dedup — file cache is the durable store shared with poll-jira.sh
+// In-memory dedup — file cache is the durable store shared with poll-jira.sh.
+// Capped at 1000 entries; oldest entry evicted when full.
 const seenThisSession = new Set();
+const SEEN_MAX = 1000;
 
 function isAlreadySeen(ticketKey) {
   if (seenThisSession.has(ticketKey)) return true;
@@ -26,6 +28,7 @@ function isAlreadySeen(ticketKey) {
 }
 
 function markSeen(ticketKey) {
+  if (seenThisSession.size >= SEEN_MAX) seenThisSession.delete(seenThisSession.values().next().value);
   seenThisSession.add(ticketKey);
   try {
     fs.appendFileSync(config.seenCacheFile, ticketKey + '\n');

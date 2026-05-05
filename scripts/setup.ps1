@@ -36,7 +36,7 @@ Write-Host "Repo     : $PROJECT_ROOT"
 Write-Host "======================================"
 
 # ── 1. uvx (Jira MCP) ─────────────────────────────────────────────────────────
-step "1/7  uvx  (Jira MCP server)  [required]"
+step "1/8  uvx  (Jira MCP server)  [required]"
 
 if (cmd_exists 'uvx') {
     ok "uvx already installed"
@@ -59,8 +59,8 @@ if (cmd_exists 'uvx') {
     }
 }
 
-# ── 2. Node.js (ccusage) ──────────────────────────────────────────────────────
-step "2/7  Node.js  (budget tracking + Prevoyant Server)  [required]"
+# ── 2. Node.js (codeburn) ─────────────────────────────────────────────────────
+step "2/8  Node.js  (budget tracking + Prevoyant Server)  [required]"
 
 if (cmd_exists 'node') {
     ok "Node.js already installed ($(node --version 2>$null))"
@@ -105,7 +105,7 @@ if (cmd_exists 'node') {
 }
 
 # ── 3. pandoc (PDF generation) ────────────────────────────────────────────────
-step "3/7  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
+step "3/8  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
 
 if (cmd_exists 'pandoc') {
     ok "pandoc already installed ($(pandoc --version 2>$null | Select-Object -First 1))"
@@ -151,8 +151,55 @@ if (cmd_exists 'pandoc') {
     }
 }
 
-# ── 4. .env ───────────────────────────────────────────────────────────────────
-step "4/7  .env  (environment file)  [required]"
+# ── 4. qpdf (PDF encryption for WhatsApp delivery) ───────────────────────────
+step "4/8  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
+
+if (cmd_exists 'qpdf') {
+    ok "qpdf already installed ($((qpdf --version 2>$null | Select-Object -First 1) -replace '.*qpdf version ','qpdf '))"
+} else {
+    info "Installing qpdf..."
+    $QPDF_OK = $false
+
+    if (-not $QPDF_OK -and (cmd_exists 'winget')) {
+        info "--> winget"
+        try {
+            winget install --id qpdf.qpdf --silent --accept-package-agreements --accept-source-agreements 2>&1 |
+                Select-Object -Last 5 | ForEach-Object { info $_ }
+            refresh_path
+            if (cmd_exists 'qpdf') { $QPDF_OK = $true }
+        } catch { info "winget attempt failed: $_" }
+    }
+
+    if (-not $QPDF_OK -and (cmd_exists 'choco')) {
+        info "--> Chocolatey"
+        try {
+            choco install qpdf -y 2>&1 | Select-Object -Last 5 | ForEach-Object { info $_ }
+            refresh_path
+            if (cmd_exists 'qpdf') { $QPDF_OK = $true }
+        } catch { info "Chocolatey attempt failed: $_" }
+    }
+
+    if (-not $QPDF_OK -and (cmd_exists 'scoop')) {
+        info "--> Scoop"
+        try {
+            scoop install qpdf 2>&1 | Select-Object -Last 5 | ForEach-Object { info $_ }
+            refresh_path
+            if (cmd_exists 'qpdf') { $QPDF_OK = $true }
+        } catch { info "Scoop attempt failed: $_" }
+    }
+
+    if (cmd_exists 'qpdf') {
+        ok "qpdf installed"
+    } else {
+        warn "qpdf not installed — PDF encryption for WhatsApp delivery will be skipped."
+        impact "Reports will be sent unencrypted until qpdf is installed"
+        info "Install manually: winget install qpdf.qpdf  (or choco install qpdf)"
+        info "Or download from: https://github.com/qpdf/qpdf/releases"
+    }
+}
+
+# ── 5. .env ───────────────────────────────────────────────────────────────────
+step "5/8  .env  (environment file)  [required]"
 
 $EnvFile    = Join-Path $PROJECT_ROOT ".env"
 $EnvExample = Join-Path $PROJECT_ROOT ".env.example"
@@ -172,7 +219,7 @@ if (Test-Path $EnvFile) {
 }
 
 # ── 5. Claude Code settings.json (marketplace registration) ───────────────────
-step "5/7  Claude Code marketplace registration  [required]"
+step "6/8  Claude Code marketplace registration  [required]"
 
 $SettingsFile = Join-Path $env:USERPROFILE ".claude\settings.json"
 $SettingsDir  = Split-Path -Parent $SettingsFile
@@ -214,7 +261,7 @@ try {
 # SessionStart hooks (load-env + check-budget) live in the committed
 # .claude/settings.json and work without this file.  This file only adds
 # pre-approved permissions so common commands don't trigger prompts.
-step "6/7  settings.local.json  (permission allowlist)  [optional]"
+step "7/8  settings.local.json  (permission allowlist)  [optional]"
 
 $LocalSettings = Join-Path $PROJECT_ROOT ".claude\settings.local.json"
 $LocalDir = Split-Path -Parent $LocalSettings
@@ -228,7 +275,8 @@ if (Test-Path $LocalSettings) {
         $config = [PSCustomObject]@{
             permissions = [PSCustomObject]@{
                 allow = @(
-                    "Bash(npx --yes ccusage@latest *)",
+                    "Bash(npx --yes codeburn@latest *)",
+                    "Bash(codeburn *)",
                     "Bash(bash scripts/check-budget.sh)",
                     "Bash(bash .claude/load-env.sh)"
                 )
@@ -242,7 +290,7 @@ if (Test-Path $LocalSettings) {
 }
 
 # ── 7. Plugin install + enable ────────────────────────────────────────────────
-step "7/7  plugin install + enable  [required]"
+step "8/8  plugin install + enable  [required]"
 
 $PLUGIN_OK = $false
 if (cmd_exists 'claude') {
