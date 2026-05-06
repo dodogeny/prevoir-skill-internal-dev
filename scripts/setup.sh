@@ -201,7 +201,7 @@ printf "════════════════════════
 
 # ── 1. uvx (Jira MCP) ─────────────────────────────────────────────────────────
 
-step "1/8 uvx  (Jira MCP server)  [required]"
+step "1/9 uvx  (Jira MCP server)  [required]"
 
 if command -v uvx &>/dev/null; then
   ok "uvx already installed"
@@ -228,7 +228,7 @@ fi
 
 # ── 2. Node.js + codeburn ─────────────────────────────────────────────────────
 
-step "2/8  Node.js  (budget tracking + Prevoyant Server)  [required]"
+step "2/9  Node.js  (budget tracking + Prevoyant Server)  [required]"
 
 if locate_npx &>/dev/null; then
   ok "Node.js already installed ($(node --version 2>/dev/null || echo 'found'))"
@@ -291,7 +291,7 @@ fi
 
 # ── 3. pandoc (PDF generation) ────────────────────────────────────────────────
 
-step "3/8  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
+step "3/9  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
 
 if command -v pandoc &>/dev/null; then
   ok "pandoc already installed ($(pandoc --version 2>/dev/null | head -1 || echo 'found'))"
@@ -331,7 +331,7 @@ fi
 
 # ── 4. qpdf (PDF encryption for WhatsApp delivery) ───────────────────────────
 
-step "4/8  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
+step "4/9  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
 
 if command -v qpdf &>/dev/null; then
   ok "qpdf already installed ($(qpdf --version 2>/dev/null | head -1 || echo 'found'))"
@@ -381,9 +381,21 @@ else
   fi
 fi
 
-# ── 5. .env ───────────────────────────────────────────────────────────────────
+# ── 5. basic-memory (per-agent personal memory MCP) ──────────────────────────
 
-step "5/8  .env  (environment file)  [required]"
+step "5/9  basic-memory  (per-agent MCP)  [optional — set PRX_BASIC_MEMORY_ENABLED=Y in .env]"
+
+if command -v uvx &>/dev/null; then
+  ok "basic-memory available via uvx — no separate install needed"
+  info "Seven per-agent MCP projects auto-provisioned when PRX_BASIC_MEMORY_ENABLED=Y"
+else
+  warn "uvx not found — basic-memory requires uvx (step 1/9 must succeed first)"
+  impact "Personal agent memory MCP will not start until uvx is installed"
+fi
+
+# ── 6. .env ───────────────────────────────────────────────────────────────────
+
+step "6/9  .env  (environment file)  [required]"
 
 ENV_FILE="$PROJECT_ROOT/.env"
 ENV_EXAMPLE="$PROJECT_ROOT/.env.example"
@@ -402,9 +414,9 @@ else
   fi
 fi
 
-# ── 5. Claude Code settings.json (marketplace registration) ───────────────────
+# ── 7. Claude Code settings.json (marketplace registration) ───────────────────
 
-step "6/8  Claude Code marketplace registration  [required]"
+step "7/9  Claude Code marketplace registration  [required]"
 
 # On WSL, Claude Code runs on Windows — write to the Windows user profile.
 # On Git Bash, $HOME already maps to the Windows user folder.
@@ -506,12 +518,12 @@ else
   impact "Prevoyant plugin will not load in Claude Code until the marketplace is registered"
 fi
 
-# ── 6. .claude/settings.local.json (permissions) ─────────────────────────────
+# ── 8. .claude/settings.local.json (permissions) ─────────────────────────────
 # SessionStart hooks (load-env + check-budget) live in the committed
 # .claude/settings.json and work without this file.  This file only adds
 # pre-approved permissions so common commands don't trigger prompts.
 
-step "7/8  settings.local.json  (permission allowlist)  [optional]"
+step "8/9  settings.local.json  (permission allowlist)  [optional]"
 
 LOCAL_SETTINGS="$PROJECT_ROOT/.claude/settings.local.json"
 mkdir -p "$PROJECT_ROOT/.claude"
@@ -550,9 +562,9 @@ PYEOF
   fi
 fi
 
-# ── 7. Plugin install + enable ────────────────────────────────────────────────
+# ── 9. Plugin install + enable ────────────────────────────────────────────────
 
-step "8/8  plugin install + enable  [required]"
+step "9/9  plugin install + enable  [required]"
 
 PLUGIN_OK=0
 if command -v claude &>/dev/null; then

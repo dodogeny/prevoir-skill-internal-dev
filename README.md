@@ -1,4 +1,4 @@
-# Prevoyant - Claude Code Plugin `v1.2.9`
+# Prevoyant - Claude Code Plugin `v1.2.10`
 
 **Prevoyant** is a [Claude Code](https://claude.ai/code) plugin — an AI agent team that runs a structured, end-to-end developer workflow for Jira tickets. Three modes:
 
@@ -918,6 +918,20 @@ rm -rf ~/.prevoyant/reports   # or the path set in CLAUDE_REPORT_DIR
 ---
 
 ## Changelog
+
+### v1.2.10 — Memory Efficiency, Animated Sun Logo, Backup & Export, Per-agent Personal Memory
+
+- **Memory efficiency:** Replaced full `/dashboard/json` polling with a new `/dashboard/busy` endpoint (O(1) in-memory Map scan) used by the sun-logo indicator — eliminates disk I/O and array sorting on every 4-second poll. `loadSessions()` now caps in-memory history at 50 recent completed tickets (was unbounded — servers with thousands of session files loaded all into RAM). `getChartData()` result is cached for 60 seconds and invalidated on new events instead of recomputing on every page load. `seenThisSession` dedup Set is now capped at 1 000 entries with LRU eviction.
+
+- **Animated sun logo:** A sun SVG replaces the static accent dot in the header of every dashboard page. The icon spins with an amber glow when any ticket is running, queued, or retrying — and returns to a quiet dimmed state when idle. Polls `/dashboard/busy` every 4 seconds; no-ops silently when the server is unreachable.
+
+- **Backup & Export expanded:** Settings → Backup & Export now covers all runtime state, not just the knowledge base. New checkboxes for **Server state** (`activity-log.json` + `watched-tickets.json`), **Watch logs**, and **Agent memory index**, each with a live file count. Archive renamed `prevoyant-backup-<date>.tar.gz`. Import is unchanged — existing files are never overwritten.
+
+- **Per-agent personal memory via basic-memory MCP:** Set `PRX_BASIC_MEMORY_ENABLED=Y` to give each of the 7 agents (Morgan, Alex, Sam, Jordan, Henk, Riley, Bryan) a persistent `basic-memory` MCP project. Personal memory compounds individual calibration data, corrected assumptions, and recurring surprises that belong to the agent rather than the shared KB. Storage resolves automatically from `BASIC_MEMORY_HOME` — defaults alongside the KB in distributed mode or under `~/.prevoyant/knowledge-base/agents` in local mode. Zero extra installs: requires only `uvx` (already needed for Jira MCP).
+
+- **qpdf auto-install:** `setup.sh` and `setup.ps1` now include a step 4/9 that attempts to install `qpdf` via the platform's package manager (Homebrew, apt, dnf, winget, Chocolatey, Scoop). Falls back to download instructions with the GitHub releases URL. Steps renumbered 1–9/9 across both scripts (step 5/9 added for basic-memory).
+
+- **Setup script fixes:** `setup.ps1` corrected `ccusage` → `codeburn` in the permissions allowlist and section header. Both scripts now consistently reference the `codeburn` budget-tracking CLI.
 
 ### v1.2.9 — WhatsApp Notifications + Activity Tracking + ast-grep Code Search
 

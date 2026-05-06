@@ -66,13 +66,49 @@ async function isBudgetExceeded() {
 // Matches Anthropic billing / credit errors in process output
 const BILLING_ERROR_RE = /credit balance is too low|credit_balance_too_low|insufficient.*credit|billing.*error|subscription.*expired|account.*suspended|payment required/i;
 
+// Returns basic-memory MCP server entries for all 7 agents when
+// PRX_BASIC_MEMORY_ENABLED=Y. BASIC_MEMORY_HOME resolves from the KB path
+// so personal memory travels with the shared KB in distributed mode.
+function buildBasicMemoryServers() {
+  if ((process.env.PRX_BASIC_MEMORY_ENABLED || '').toUpperCase() !== 'Y') return {};
+
+  const home = process.env.BASIC_MEMORY_HOME || (() => {
+    const kbMode = process.env.PRX_KB_MODE || 'local';
+    if (kbMode === 'distributed') {
+      const clone = process.env.PRX_KB_LOCAL_CLONE || path.join(os.homedir(), '.prevoyant', 'kb');
+      return path.join(clone, 'agents');
+    }
+    const knowledgeDir = process.env.PRX_KNOWLEDGE_DIR || path.join(os.homedir(), '.prevoyant', 'knowledge-base');
+    return path.join(knowledgeDir, 'agents');
+  })();
+
+  const agents = ['morgan', 'alex', 'sam', 'jordan', 'henk', 'riley', 'bryan'];
+  return Object.fromEntries(agents.map(agent => [
+    `basic-memory-${agent}`,
+    { command: 'uvx', args: ['basic-memory', 'mcp'], env: { BASIC_MEMORY_PROJECT: agent, BASIC_MEMORY_HOME: home } },
+  ]));
+}
+
 // Build a temp MCP config that uses mcp-atlassian with API-token auth.
 // When JIRA_URL + JIRA_USERNAME + JIRA_API_TOKEN are present in the env block,
 // mcp-atlassian uses basic auth instead of OAuth — no browser pop-up needed.
 // Falls back to the static .mcp.json when credentials are not configured.
 function buildMcpConfig() {
   const { jiraUrl, jiraUsername, jiraToken } = config;
-  if (!jiraUrl || !jiraUsername || !jiraToken) return config.mcpConfigFile;
+  const basicMemoryServers = buildBasicMemoryServers();
+  const hasBasicMemory = Object.keys(basicMemoryServers).length > 0;
+
+  if (!jiraUrl || !jiraUsername || !jiraToken) {
+    // No Jira creds — only write a temp file if basic-memory is enabled,
+    // otherwise return the static .mcp.json unchanged.
+    if (!hasBasicMemory) return config.mcpConfigFile;
+    const tmp = path.join(os.tmpdir(), `prevoyant-mcp-${process.pid}.json`);
+    const staticConfig = JSON.parse(fs.readFileSync(config.mcpConfigFile, 'utf8'));
+    fs.writeFileSync(tmp, JSON.stringify({
+      mcpServers: { ...staticConfig.mcpServers, ...basicMemoryServers },
+    }));
+    return tmp;
+  }
 
   const tmp = path.join(os.tmpdir(), `prevoyant-mcp-${process.pid}.json`);
   fs.writeFileSync(tmp, JSON.stringify({
@@ -86,6 +122,7 @@ function buildMcpConfig() {
           JIRA_API_TOKEN: jiraToken,
         },
       },
+      ...basicMemoryServers,
     },
   }));
   return tmp;

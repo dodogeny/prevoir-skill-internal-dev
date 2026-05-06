@@ -3,6 +3,41 @@
     "jira": {
       "command": "uvx",
       "args": ["mcp-atlassian"]
+    },
+    "basic-memory-morgan": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "morgan" }
+    },
+    "basic-memory-alex": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "alex" }
+    },
+    "basic-memory-sam": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "sam" }
+    },
+    "basic-memory-jordan": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "jordan" }
+    },
+    "basic-memory-henk": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "henk" }
+    },
+    "basic-memory-riley": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "riley" }
+    },
+    "basic-memory-bryan": {
+      "command": "uvx",
+      "args": ["basic-memory", "mcp"],
+      "env": { "BASIC_MEMORY_PROJECT": "bryan" }
     }
   }
 }

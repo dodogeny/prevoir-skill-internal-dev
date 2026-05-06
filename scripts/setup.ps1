@@ -36,7 +36,7 @@ Write-Host "Repo     : $PROJECT_ROOT"
 Write-Host "======================================"
 
 # ── 1. uvx (Jira MCP) ─────────────────────────────────────────────────────────
-step "1/8  uvx  (Jira MCP server)  [required]"
+step "1/9  uvx  (Jira MCP server)  [required]"
 
 if (cmd_exists 'uvx') {
     ok "uvx already installed"
@@ -60,7 +60,7 @@ if (cmd_exists 'uvx') {
 }
 
 # ── 2. Node.js (codeburn) ─────────────────────────────────────────────────────
-step "2/8  Node.js  (budget tracking + Prevoyant Server)  [required]"
+step "2/9  Node.js  (budget tracking + Prevoyant Server)  [required]"
 
 if (cmd_exists 'node') {
     ok "Node.js already installed ($(node --version 2>$null))"
@@ -105,7 +105,7 @@ if (cmd_exists 'node') {
 }
 
 # ── 3. pandoc (PDF generation) ────────────────────────────────────────────────
-step "3/8  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
+step "3/9  pandoc  (PDF reports)  [optional — Chrome headless or HTML fallback]"
 
 if (cmd_exists 'pandoc') {
     ok "pandoc already installed ($(pandoc --version 2>$null | Select-Object -First 1))"
@@ -152,7 +152,7 @@ if (cmd_exists 'pandoc') {
 }
 
 # ── 4. qpdf (PDF encryption for WhatsApp delivery) ───────────────────────────
-step "4/8  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
+step "4/9  qpdf  (PDF encryption)  [optional — needed for PRX_WASENDER_PDF_PASSWORD]"
 
 if (cmd_exists 'qpdf') {
     ok "qpdf already installed ($((qpdf --version 2>$null | Select-Object -First 1) -replace '.*qpdf version ','qpdf '))"
@@ -198,8 +198,19 @@ if (cmd_exists 'qpdf') {
     }
 }
 
-# ── 5. .env ───────────────────────────────────────────────────────────────────
-step "5/8  .env  (environment file)  [required]"
+# ── 5. basic-memory (per-agent personal memory MCP) ──────────────────────────
+step "5/9  basic-memory  (per-agent MCP)  [optional — set PRX_BASIC_MEMORY_ENABLED=Y in .env]"
+
+if (cmd_exists 'uvx') {
+    ok "basic-memory available via uvx — no separate install needed"
+    info "Seven per-agent MCP projects auto-provisioned when PRX_BASIC_MEMORY_ENABLED=Y"
+} else {
+    warn "uvx not found — basic-memory requires uvx (step 1/9 must succeed first)"
+    impact "Personal agent memory MCP will not start until uvx is installed"
+}
+
+# ── 6. .env ───────────────────────────────────────────────────────────────────
+step "6/9  .env  (environment file)  [required]"
 
 $EnvFile    = Join-Path $PROJECT_ROOT ".env"
 $EnvExample = Join-Path $PROJECT_ROOT ".env.example"
@@ -218,8 +229,8 @@ if (Test-Path $EnvFile) {
     }
 }
 
-# ── 5. Claude Code settings.json (marketplace registration) ───────────────────
-step "6/8  Claude Code marketplace registration  [required]"
+# ── 7. Claude Code settings.json (marketplace registration) ───────────────────
+step "7/9  Claude Code marketplace registration  [required]"
 
 $SettingsFile = Join-Path $env:USERPROFILE ".claude\settings.json"
 $SettingsDir  = Split-Path -Parent $SettingsFile
@@ -257,11 +268,11 @@ try {
     info "Add the marketplace manually (see README)"
 }
 
-# ── 6. .claude/settings.local.json (permissions) ─────────────────────────────
+# ── 8. .claude/settings.local.json (permissions) ─────────────────────────────
 # SessionStart hooks (load-env + check-budget) live in the committed
 # .claude/settings.json and work without this file.  This file only adds
 # pre-approved permissions so common commands don't trigger prompts.
-step "7/8  settings.local.json  (permission allowlist)  [optional]"
+step "8/9  settings.local.json  (permission allowlist)  [optional]"
 
 $LocalSettings = Join-Path $PROJECT_ROOT ".claude\settings.local.json"
 $LocalDir = Split-Path -Parent $LocalSettings
@@ -289,8 +300,8 @@ if (Test-Path $LocalSettings) {
     }
 }
 
-# ── 7. Plugin install + enable ────────────────────────────────────────────────
-step "8/8  plugin install + enable  [required]"
+# ── 9. Plugin install + enable ────────────────────────────────────────────────
+step "9/9  plugin install + enable  [required]"
 
 $PLUGIN_OK = $false
 if (cmd_exists 'claude') {
